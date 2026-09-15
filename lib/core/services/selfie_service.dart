@@ -8,7 +8,7 @@ final class ImagePickerSelfieService implements SelfieGateway {
   ImagePickerSelfieService({ImagePicker? picker})
     : _picker = picker ?? ImagePicker();
 
-  static const _maximumBytes = 8 * 1024 * 1024;
+  static const _maximumBytes = 5 * 1024 * 1024;
 
   final ImagePicker _picker;
 
@@ -29,7 +29,7 @@ final class ImagePickerSelfieService implements SelfieGateway {
       if (bytes.length > _maximumBytes) {
         throw const SelfieException(
           SelfieIssueKind.tooLarge,
-          'Ukuran selfie melebihi 8 MB. Ambil foto ulang dengan pencahayaan yang cukup.',
+          'Ukuran selfie melebihi 5 MB. Ambil foto ulang dengan pencahayaan yang cukup.',
         );
       }
       return CapturedSelfie(

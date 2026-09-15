@@ -19,6 +19,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       if (previous == null || previous == next) return;
       _operation++;
       _currentSession = null;
+      ref.read(loginSuccessPendingProvider.notifier).state = false;
       ref.read(requestContextProvider.notifier).state = null;
       state = const AsyncData(null);
     });
@@ -51,6 +52,13 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       totp: totp,
     );
     if (_disposed || operation != _operation) return;
+    if (result case FailureResult<AuthSession>()) {
+      ref.read(loginSuccessPendingProvider.notifier).state = false;
+    } else if (result case Success<AuthSession>(
+      :final value,
+    ) when value.mustChangePassword || !value.hasEmployeeAccess) {
+      ref.read(loginSuccessPendingProvider.notifier).state = false;
+    }
     state = switch (result) {
       Success(:final value) => AsyncData(_setContext(value)!),
       FailureResult(:final failure) => AsyncError(failure, StackTrace.current),
@@ -84,6 +92,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   Future<void> logout() async {
     _operation++;
     _currentSession = null;
+    ref.read(loginSuccessPendingProvider.notifier).state = false;
     ref.read(requestContextProvider.notifier).state = null;
     state = const AsyncData(null);
     await ref.read(authRepositoryProvider).logout();
@@ -116,3 +125,5 @@ class AuthController extends AsyncNotifier<AuthSession?> {
 }
 
 final authNoticeProvider = StateProvider<String?>((ref) => null);
+
+final loginSuccessPendingProvider = StateProvider<bool>((ref) => false);

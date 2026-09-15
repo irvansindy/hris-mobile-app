@@ -9,7 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hrm_app/core/config/app_config.dart';
 import 'package:hrm_app/core/network/dio_client.dart';
 import 'package:hrm_app/core/network/request_context.dart';
-import 'package:hrm_app/core/security/cookie_session.dart';
 import 'package:hrm_app/core/security/token_storage.dart';
 import 'package:hrm_app/features/authentication/authentication_providers.dart';
 
@@ -33,11 +32,26 @@ void main() {
         final release = Completer<void>();
         final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
         addTearDown(() => server.close(force: true));
-        final received = <({String path, String? cookie})>[];
+        final received =
+            <
+              ({
+                String path,
+                String body,
+                String? auth,
+                String? cookie,
+                String? clientType,
+              })
+            >[];
         server.listen((request) async {
           final body = await utf8.decoder.bind(request).join();
           final path = request.uri.path.split('/').last;
-          received.add((path: path, cookie: request.headers.value('cookie')));
+          received.add((
+            path: path,
+            body: body,
+            auth: request.headers.value('authorization'),
+            cookie: request.headers.value('cookie'),
+            clientType: request.headers.value('x-client-type'),
+          ));
           request.response.headers.contentType = ContentType.json;
           if (path == scenario.path) {
             blocked.complete();
@@ -53,13 +67,6 @@ void main() {
             final id = path == 'login'
                 ? (jsonDecode(body) as Map)['email'] as String
                 : 'late-A';
-            for (final cookie in [
-              'at=token-$id; Max-Age=900; Path=/; HttpOnly; SameSite=Lax',
-              'rt=refresh-$id; Max-Age=604800; Path=/api/v1/auth; HttpOnly; SameSite=Lax',
-              'csrf=csrf-$id; Path=/; SameSite=Lax',
-            ]) {
-              request.response.headers.add('set-cookie', cookie);
-            }
             request.response.write(
               jsonEncode({
                 'success': true,
@@ -71,13 +78,17 @@ void main() {
                     'companyId': 'company-$id',
                     'companyScope': ['company-$id'],
                   },
-                  'tokens': {'expiresIn': 900},
+                  'tokens': {
+                    'accessToken': 'token-$id',
+                    'refreshToken': 'refresh-$id',
+                    'expiresIn': 900,
+                  },
                 },
               }),
             );
           } else if (path == 'me') {
-            final access = cookieValue(request.headers.value('cookie'), 'at');
-            final id = access?.replaceFirst('token-', '') ?? 'unknown';
+            final access = request.headers.value('authorization');
+            final id = access?.replaceFirst('Bearer token-', '') ?? 'unknown';
             request.response.write(
               jsonEncode({
                 'success': true,
@@ -91,13 +102,6 @@ void main() {
               }),
             );
           } else if (path == 'logout') {
-            for (final cookie in [
-              'at=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax',
-              'rt=; Max-Age=0; Path=/api/v1/auth; HttpOnly; SameSite=Lax',
-              'csrf=; Max-Age=0; Path=/; SameSite=Lax',
-            ]) {
-              request.response.headers.add('set-cookie', cookie);
-            }
             request.response.write(jsonEncode({'success': true, 'data': null}));
           } else {
             request.response.headers.add('set-cookie', 'at=late-A; Path=/');
@@ -173,13 +177,10 @@ void main() {
           );
         }
         expect(
-          cookieValue(await storage.readCookieHeader(), 'at'),
+          await storage.readAccessToken(),
           scenario.loginB ? 'token-B' : null,
         );
-        expect(
-          await storage.readCsrfToken(),
-          scenario.loginB ? 'csrf-B' : null,
-        );
+        expect(await storage.readCsrfToken(), isNull);
         expect(
           (await storage.readSession())?['id'],
           scenario.loginB ? 'B' : null,
@@ -201,18 +202,26 @@ void main() {
           scenario.path == 'refresh' ? 1 : 0,
         );
         if (!expiresCurrent) {
-          expect(
-            cookieValue(
-              received.firstWhere((r) => r.path == 'logout').cookie,
-              'at',
-            ),
-            'token-A',
-          );
+          final logout = received.firstWhere((r) => r.path == 'logout');
+          expect(logout.auth, isNull);
+          expect(logout.cookie, isNull);
+          expect(jsonDecode(logout.body), {'refreshToken': 'refresh-A'});
         }
         expect(
           received
               .where((r) => r.path == 'login')
-              .every((r) => r.cookie == null),
+              .every(
+                (r) =>
+                    r.cookie == null &&
+                    r.auth == null &&
+                    r.clientType == 'mobile',
+              ),
+          isTrue,
+        );
+        expect(
+          received
+              .where((r) => r.path == 'refresh')
+              .every((r) => r.clientType == 'mobile'),
           isTrue,
         );
         final count = received.length;

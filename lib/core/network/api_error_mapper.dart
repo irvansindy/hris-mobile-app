@@ -27,6 +27,7 @@ ApiException mapDioException(DioException error) {
           _ => null,
         },
     fieldErrors: errors,
+    retryAfterSeconds: _retryAfterSeconds(error, json),
   );
 }
 
@@ -40,7 +41,7 @@ Failure mapApiException(ApiException error) => switch (error.code) {
     error.message,
     fieldErrors: error.fieldErrors,
   ),
-  'TOO_MANY_REQUESTS' => RateLimitFailure(error.message),
+  'TOO_MANY_REQUESTS' => _rateLimitFailure(error),
   _ when error.statusCode == 401 => AuthenticationFailure(
     error.message,
     code: error.code,
@@ -50,7 +51,7 @@ Failure mapApiException(ApiException error) => switch (error.code) {
     error.message,
     fieldErrors: error.fieldErrors,
   ),
-  _ when error.statusCode == 429 => RateLimitFailure(error.message),
+  _ when error.statusCode == 429 => _rateLimitFailure(error),
   _ => ServerFailure(
     error.message,
     statusCode: error.statusCode,
@@ -58,6 +59,51 @@ Failure mapApiException(ApiException error) => switch (error.code) {
     fieldErrors: error.fieldErrors,
   ),
 };
+
+RateLimitFailure _rateLimitFailure(ApiException error) {
+  final seconds = error.retryAfterSeconds;
+  final suffix = seconds == null
+      ? ''
+      : ' Coba lagi dalam ${_durationLabel(seconds)}.';
+  return RateLimitFailure(
+    '${error.message}$suffix',
+    retryAfterSeconds: seconds,
+  );
+}
+
+int? _retryAfterSeconds(DioException error, Map<String, dynamic> json) {
+  final data = json['data'];
+  final nested = data is Map<String, dynamic>
+      ? data
+      : const <String, dynamic>{};
+  for (final value in [
+    json['retryAfterSeconds'],
+    json['retryAfter'],
+    nested['retryAfterSeconds'],
+    nested['retryAfter'],
+    error.response?.headers.value('retry-after'),
+  ]) {
+    if (value is num && value >= 0) return value.ceil();
+    if (value is String) {
+      final seconds = num.tryParse(value);
+      if (seconds != null && seconds >= 0) return seconds.ceil();
+      final date = DateTime.tryParse(value)?.toUtc();
+      if (date != null) {
+        return date
+            .difference(DateTime.now().toUtc())
+            .inSeconds
+            .clamp(0, 86400);
+      }
+    }
+  }
+  return null;
+}
+
+String _durationLabel(int seconds) {
+  if (seconds < 60) return '$seconds detik';
+  final minutes = (seconds / 60).ceil();
+  return '$minutes menit';
+}
 
 String _networkMessage(DioExceptionType type) => switch (type) {
   DioExceptionType.connectionTimeout ||

@@ -1,10 +1,3 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,12 +35,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
-    expect(find.text('Masuk'), findsNWidgets(2));
-    expect(find.text('Alamat email'), findsOneWidget);
+    expect(find.text('Masuk'), findsOneWidget);
+    expect(find.text('EMAIL KANTOR'), findsOneWidget);
     expect(find.text('HRMS Enterprise'), findsNothing);
   });
 
-  testWidgets('renders the existing HRMS shell without changing its UI', (
+  testWidgets('renders the four-destination HRIS shell', (
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
@@ -78,8 +71,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Attendance'), findsOneWidget);
+    expect(find.text('Beranda'), findsOneWidget);
+    expect(find.text('Absensi'), findsWidgets);
+    expect(find.text('Kalender'), findsOneWidget);
+    expect(find.text('Profil'), findsOneWidget);
+    expect(find.text('Requests'), findsNothing);
   });
 
   testWidgets('renders login inputs with dark-mode colors', (
@@ -106,8 +102,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
-    expect(scaffold.backgroundColor, AppColors.darkBg);
+    final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(materialApp.themeMode, ThemeMode.dark);
     final inputs = tester.widgetList<EditableText>(find.byType(EditableText));
     expect(inputs, hasLength(2));
     for (final input in inputs) {

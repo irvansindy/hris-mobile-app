@@ -29,13 +29,14 @@ class AuthSessionDto {
     String? authCookie,
     List<String> authSetCookies = const [],
     bool assumeBrowserCookieAuth = false,
+    bool requireBearerTokens = false,
   }) {
     final tokens = json['tokens'] as Map<String, dynamic>? ?? const {};
     final user = json['user'] as Map<String, dynamic>? ?? const {};
     if (_asId(user['id']) == null) {
       throw const FormatException('User ID is missing');
     }
-    return AuthSessionDto._fromParts(
+    final result = AuthSessionDto._fromParts(
       tokens: tokens,
       user: user,
       authCookie: authCookie,
@@ -45,6 +46,14 @@ class AuthSessionDto {
       usesCookieAuth:
           assumeBrowserCookieAuth || cookieValue(authCookie, 'at') != null,
     );
+    if (requireBearerTokens &&
+        ((result.accessToken?.isEmpty ?? true) ||
+            (result.refreshToken?.isEmpty ?? true))) {
+      throw const FormatException(
+        'Mobile login response must include access and refresh tokens',
+      );
+    }
+    return result;
   }
 
   factory AuthSessionDto.fromStoredJson(Map<String, dynamic> json) =>

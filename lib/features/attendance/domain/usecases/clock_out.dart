@@ -17,7 +17,7 @@ class ClockOut {
   final LocationGateway _locationService;
   final String Function() _idempotencyKey;
 
-  Future<Result<AttendanceEntity>> call(String employeeId) async {
+  Future<Result<AttendanceEntity>> call() async {
     final position = await _locationService.currentPosition();
     if (position.isMocked) {
       throw const LocationException(
@@ -33,14 +33,11 @@ class ClockOut {
     }
     return _repository.clockOut(
       AttendanceCommand(
-        employeeId: employeeId,
         latitude: position.latitude,
         longitude: position.longitude,
         accuracyMeters: position.accuracyMeters,
         capturedAt: position.capturedAt,
         isMocked: position.isMocked,
-        altitudeMeters: position.altitudeMeters,
-        headingDegrees: position.headingDegrees,
         method: AttendanceCaptureMethod.mobileGps,
         idempotencyKey: _idempotencyKey(),
       ),

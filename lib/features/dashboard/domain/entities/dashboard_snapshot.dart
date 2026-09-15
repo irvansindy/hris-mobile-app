@@ -9,6 +9,9 @@ class DashboardSnapshot {
     this.leaveBalancesAvailable = false,
     this.monthlySummaryAvailable = false,
     this.announcementsAvailable = false,
+    this.leaveBalancesError,
+    this.announcementsError,
+    this.unreadNotifications = 0,
   });
 
   final DashboardEmployee employee;
@@ -20,6 +23,9 @@ class DashboardSnapshot {
   final bool leaveBalancesAvailable;
   final bool monthlySummaryAvailable;
   final bool announcementsAvailable;
+  final String? leaveBalancesError;
+  final String? announcementsError;
+  final int unreadNotifications;
 }
 
 class DashboardAttendance {

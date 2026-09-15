@@ -260,7 +260,7 @@ RequestContext _account(String id) => RequestContext(
   companyScope: ['company-$id'],
 );
 
-class _Requests implements RequestRepository {
+class _Requests extends RequestRepository {
   final release = Completer<void>();
   @override
   final List<EmployeeRequest> current = [];
@@ -336,7 +336,7 @@ class _Calendar implements CalendarRepository {
   Future<CalendarData> loadMonth(int year, int month) => pending.future;
 }
 
-class _Attendance implements AttendanceRepository {
+class _Attendance extends AttendanceRepository {
   _Attendance(this.name);
   final String name;
   final pending = Completer<Result<AttendanceEntity>>();

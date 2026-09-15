@@ -6,8 +6,11 @@ abstract interface class CalendarLocalDataSource {
 
 class UnavailableCalendarLocalDataSource implements CalendarLocalDataSource {
   @override
-  CalendarData read() =>
-      CalendarData(focusedDate: DateTime.now(), eventsByDay: const {});
+  CalendarData read() => CalendarData(
+    focusedDate: DateTime.now(),
+    eventsByDay: const {},
+    available: false,
+  );
 }
 
 class DemoCalendarLocalDataSource implements CalendarLocalDataSource {

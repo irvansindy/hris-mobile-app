@@ -18,6 +18,22 @@ import 'package:hrm_app/features/attendance/domain/repositories/attendance_repos
 import 'package:hrm_app/features/attendance/presentation/screens/attendance_screen.dart';
 
 void main() {
+  testWidgets('attendance confirmation can be cancelled without a request', (
+    tester,
+  ) async {
+    final repository = _Repository();
+    await _pump(tester, repository: repository);
+
+    await tester.tap(find.text('Catat masuk'));
+    await tester.pumpAndSettle();
+    expect(find.text('Konfirmasi catat masuk'), findsOneWidget);
+    await tester.tap(find.text('Batal'));
+    await tester.pumpAndSettle();
+
+    expect(repository.clockInCalls, 0);
+    expect(find.text('Konfirmasi catat masuk'), findsNothing);
+  });
+
   testWidgets('GPS clock in shows success only after server result', (
     tester,
   ) async {
@@ -25,6 +41,8 @@ void main() {
     await _pump(tester, repository: repository);
 
     await tester.tap(find.text('Catat masuk'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kirim'));
     await tester.pumpAndSettle();
 
     expect(repository.clockInCalls, 1);
@@ -41,6 +59,8 @@ void main() {
     await _pump(tester, repository: repository);
 
     await tester.tap(find.text('Catat masuk'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kirim'));
     await tester.pumpAndSettle();
 
     expect(repository.clockInCalls, 1);
@@ -71,17 +91,12 @@ void main() {
     expect(repository.clockInCalls, 0);
     await tester.tap(find.text('Ambil selfie'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('Catat masuk'),
-      200,
-      scrollable: find
-          .descendant(
-            of: find.byType(ListView).first,
-            matching: find.byType(Scrollable),
-          )
-          .first,
-    );
-    await tester.tap(find.text('Catat masuk'));
+    await tester.drag(find.byType(ListView).first, const Offset(0, -420));
+    await tester.pumpAndSettle();
+    final submitButton = find.text('Catat masuk');
+    await tester.tap(submitButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kirim'));
     await tester.pumpAndSettle();
 
     expect(repository.clockInCalls, 1);
@@ -97,6 +112,8 @@ void main() {
     await _pump(tester, repository: repository, location: location);
 
     await tester.tap(find.text('Catat masuk'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kirim'));
     await tester.pumpAndSettle();
 
     expect(find.text('Absensi belum tercatat'), findsOneWidget);
@@ -180,7 +197,7 @@ class _DeniedLocation implements LocationGateway {
   Future<bool> openLocationSettings() async => true;
 }
 
-class _Repository implements AttendanceRepository {
+class _Repository extends AttendanceRepository {
   _Repository({this.failure, this.requiresSelfie = false});
 
   final String? failure;
@@ -230,7 +247,7 @@ class _Repository implements AttendanceRepository {
     return Success(
       AttendanceEntity(
         id: 'attendance-1',
-        userId: value.employeeId,
+        userId: 'employee-1',
         checkedInAt: value.capturedAt,
         status: AttendanceStatus.onTime,
         latitude: value.latitude,

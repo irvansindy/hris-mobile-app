@@ -1,8 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:hrm_app/core/network/api_envelope.dart';
+import 'package:hrm_app/core/network/api_error_mapper.dart';
+import 'package:hrm_app/core/network/api_exception.dart';
 import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/features/profile/domain/entities/employee.dart';
-import 'package:intl/intl.dart';
 
 abstract interface class ProfileRemoteDataSource {
   Future<Employee> fetch(RequestContext context, Employee fallback);
@@ -17,6 +18,15 @@ class DioProfileRemoteDataSource implements ProfileRemoteDataSource {
   Future<Employee> fetch(RequestContext context, Employee fallback) async {
     final employeeId = context.employeeId;
     if (employeeId == null) return fallback;
+    if (!context.permissions.contains('employee:read')) {
+      throw const ApiException(
+        'Akun ini tidak memiliki akses detail kepegawaian. Identitas sesi tetap tersedia.',
+        statusCode: 403,
+      );
+    }
+    if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(employeeId)) {
+      throw const FormatException('ID employee tidak valid.');
+    }
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         '/employees/$employeeId',
@@ -27,11 +37,16 @@ class DioProfileRemoteDataSource implements ProfileRemoteDataSource {
       final json = data['employee'] is Map<String, dynamic>
           ? data['employee'] as Map<String, dynamic>
           : data;
+      if (json['id'] != employeeId ||
+          (json['companyId'] != null &&
+              json['companyId'] != context.activeCompanyId)) {
+        throw const FormatException(
+          'Profil tidak sesuai employee/perusahaan aktif.',
+        );
+      }
       return _mapEmployee(json, context, fallback);
-    } on DioException {
-      return fallback;
-    } on FormatException {
-      return fallback;
+    } on DioException catch (error) {
+      throw mapDioException(error);
     }
   }
 
@@ -87,7 +102,7 @@ class DioProfileRemoteDataSource implements ProfileRemoteDataSource {
         _text(json, const ['joinDate', 'hireDate', 'joinedAt']),
         fallback.joinDate,
       ),
-      salary: _integer(json, const ['salary', 'baseSalary']),
+      salary: 0,
       initials: _initials(name),
       avatarColorIndex: name.hashCode.abs() % 4,
     );
@@ -117,19 +132,24 @@ String? _nestedText(
   return null;
 }
 
-int _integer(Map<String, dynamic> json, List<String> keys) {
-  for (final key in keys) {
-    final value = json[key];
-    if (value is num) return value.round();
-    final result = int.tryParse('$value');
-    if (result != null) return result;
-  }
-  return 0;
-}
-
 String _formatDate(String? raw, String fallback) {
-  final date = raw == null ? null : DateTime.tryParse(raw)?.toLocal();
-  return date == null ? fallback : DateFormat('dd MMM yyyy').format(date);
+  final date = raw == null ? null : DateTime.tryParse(raw.split('T').first);
+  if (date == null) return fallback;
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'Mei',
+    'Jun',
+    'Jul',
+    'Agu',
+    'Sep',
+    'Okt',
+    'Nov',
+    'Des',
+  ];
+  return '${date.day} ${months[date.month - 1]} ${date.year}';
 }
 
 String _initials(String name) => name

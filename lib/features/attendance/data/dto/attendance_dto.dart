@@ -9,6 +9,11 @@ class AttendanceDto {
     required this.status,
     required this.latitude,
     required this.longitude,
+    this.workDate,
+    this.branchName,
+    this.officeTimezone,
+    this.isWithinRadius,
+    this.requiresReview = false,
   });
 
   factory AttendanceDto.fromJson(Map<String, dynamic> json) => AttendanceDto(
@@ -28,6 +33,12 @@ class AttendanceDto {
     status: json['status'] as String? ?? 'PRESENT',
     latitude: _number(json['checkInLatitude'] ?? json['latitude']),
     longitude: _number(json['checkInLongitude'] ?? json['longitude']),
+    workDate: _date(json['date'] ?? json['attendanceDate']),
+    branchName:
+        _text(json['branchName']) ?? _text(_map(json['branch'])['name']),
+    officeTimezone: _text(json['timezone'] ?? json['officeTimezone']),
+    isWithinRadius: _boolean(json['isWithinRadius'] ?? json['withinRadius']),
+    requiresReview: _boolean(json['requiresReview']) ?? false,
   );
 
   final String id;
@@ -37,6 +48,11 @@ class AttendanceDto {
   final String status;
   final double latitude;
   final double longitude;
+  final DateTime? workDate;
+  final String? branchName;
+  final String? officeTimezone;
+  final bool? isWithinRadius;
+  final bool requiresReview;
 
   AttendanceEntity toEntity() => AttendanceEntity(
     id: id,
@@ -46,6 +62,11 @@ class AttendanceDto {
     status: _parseStatus(status),
     latitude: latitude,
     longitude: longitude,
+    workDate: workDate,
+    branchName: branchName,
+    officeTimezone: officeTimezone,
+    isWithinRadius: isWithinRadius,
+    requiresReview: requiresReview,
   );
 }
 
@@ -53,6 +74,14 @@ DateTime? _date(Object? value) =>
     value is String ? DateTime.tryParse(value) : null;
 
 double _number(Object? value) => value is num ? value.toDouble() : 0;
+
+Map<String, dynamic> _map(Object? value) =>
+    value is Map<String, dynamic> ? value : const {};
+
+String? _text(Object? value) =>
+    value is String && value.trim().isNotEmpty ? value.trim() : null;
+
+bool? _boolean(Object? value) => value is bool ? value : null;
 
 AttendanceStatus _parseStatus(String value) {
   final normalized = value.replaceAll('_', '').toLowerCase();

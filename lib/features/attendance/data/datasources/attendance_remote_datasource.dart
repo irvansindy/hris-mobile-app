@@ -9,10 +9,21 @@ import 'package:hrm_app/features/attendance/data/dto/attendance_dto.dart';
 import 'package:hrm_app/features/attendance/data/dto/attendance_context_dto.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_command.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_context.dart';
+import 'package:hrm_app/features/attendance/domain/entities/attendance_history.dart';
+import 'package:hrm_app/features/attendance/domain/entities/attendance_today.dart';
 
-abstract interface class AttendanceRemoteDataSource {
+abstract class AttendanceRemoteDataSource {
   Future<AttendanceDto> getToday();
   Future<AttendanceContext> getContext();
+  Future<AttendanceToday> getTodayState() async => AttendanceToday(
+    record: (await getToday()).toEntity(),
+    context: await getContext(),
+  );
+  Future<AttendanceHistoryPage> getHistory({
+    required String month,
+    required int page,
+    required int limit,
+  }) => throw UnsupportedError('Attendance history is not implemented.');
   Future<AttendanceDto> clockIn(AttendanceCommand command);
   Future<AttendanceDto> clockOut(AttendanceCommand command);
 }
@@ -24,16 +35,86 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
   final RequestContext? Function() _context;
 
   @override
+  Future<AttendanceToday> getTodayState() async {
+    final context = _requireContext();
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/attendance/me/today',
+      );
+      final data = ApiEnvelope.fromJson(
+        response.data ?? const {},
+      ).requireObjectData();
+      final nestedContext = data['context'];
+      final policy = AttendanceContextDto.fromJson(
+        nestedContext is Map<String, dynamic> ? nestedContext : data,
+        employeeId: context.employeeId!,
+        companyId: context.activeCompanyId!,
+      ).value;
+      final today = _todayAttendance(data);
+      final record = today == null
+          ? AttendanceDto(
+              id: '',
+              employeeId: context.employeeId!,
+              checkedInAt: null,
+              status: 'notStarted',
+              latitude: 0,
+              longitude: 0,
+            ).toEntity()
+          : AttendanceDto.fromJson(today).toEntity();
+      return AttendanceToday(record: record, context: policy);
+    } on DioException catch (error) {
+      throw mapDioException(error);
+    }
+  }
+
+  @override
+  Future<AttendanceHistoryPage> getHistory({
+    required String month,
+    required int page,
+    required int limit,
+  }) async {
+    _requireContext();
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/attendance/me',
+        queryParameters: {'month': month, 'page': page, 'limit': limit},
+      );
+      final envelope = ApiEnvelope.fromJson(response.data ?? const {});
+      if (!envelope.success) throw FormatException(envelope.message);
+      final raw = envelope.data;
+      final items = raw is List
+          ? raw
+          : raw is Map<String, dynamic>
+          ? (raw['items'] ?? raw['records'] ?? raw['attendances']) as List? ??
+                const []
+          : const [];
+      final meta =
+          envelope.meta ??
+          (raw is Map<String, dynamic>
+              ? raw['meta'] as Map<String, dynamic>?
+              : null) ??
+          const {};
+      return AttendanceHistoryPage(
+        items: items
+            .whereType<Map<String, dynamic>>()
+            .map(AttendanceDto.fromJson)
+            .map((item) => item.toEntity())
+            .toList(growable: false),
+        page: _integer(meta['page'], page),
+        totalPages: _integer(meta['totalPages'], page),
+        total: _integer(meta['total'], items.length),
+      );
+    } on DioException catch (error) {
+      throw mapDioException(error);
+    }
+  }
+
+  @override
   Future<AttendanceContext> getContext() async {
     final context = _requireContext();
     try {
       final response = await _dio.get<Map<String, dynamic>>(
-        '/attendance/context',
-        queryParameters: {
-          'employeeId': context.employeeId,
-          'companyId': context.activeCompanyId,
-          'date': _dateOnly(DateTime.now()),
-        },
+        '/attendance/me/today',
       );
       final data = ApiEnvelope.fromJson(
         response.data ?? const {},
@@ -41,6 +122,8 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
       final nested = data['context'];
       return AttendanceContextDto.fromJson(
         nested is Map<String, dynamic> ? nested : data,
+        employeeId: context.employeeId!,
+        companyId: context.activeCompanyId!,
       ).value;
     } on DioException catch (error) {
       throw mapDioException(error);
@@ -51,21 +134,13 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
   Future<AttendanceDto> getToday() async {
     final context = _requireContext();
     try {
-      final now = DateTime.now();
       final response = await _dio.get<Map<String, dynamic>>(
-        '/attendance',
-        queryParameters: {
-          'companyId': context.activeCompanyId,
-          'employeeId': context.employeeId,
-          'month': now.month,
-        },
+        '/attendance/me/today',
       );
-      final envelope = ApiEnvelope.fromJson(response.data ?? const {});
-      final records = _records(envelope.data);
-      final today = records.cast<Map<String, dynamic>?>().firstWhere(
-        (record) => record != null && _isToday(record, now),
-        orElse: () => null,
-      );
+      final data = ApiEnvelope.fromJson(
+        response.data ?? const {},
+      ).requireObjectData();
+      final today = _todayAttendance(data);
       if (today != null) return AttendanceDto.fromJson(today);
       return AttendanceDto(
         id: '',
@@ -82,18 +157,12 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
 
   @override
   Future<AttendanceDto> clockIn(AttendanceCommand command) async {
-    final context = _requireContext();
-    final capturedAt = command.capturedAt.toUtc();
+    _requireContext();
     try {
       final response = await _dio.post<Map<String, dynamic>>(
-        '/attendance',
+        '/attendance/me/check-in',
         data: {
-          'employeeId': context.employeeId,
-          'companyId': context.activeCompanyId,
-          'date': _dateStartIso(command.capturedAt.toLocal()),
-          'checkIn': capturedAt.toIso8601String(),
           'method': command.method.apiValue,
-          'source': 'MOBILE_APP',
           'checkInLatitude': command.latitude,
           'checkInLongitude': command.longitude,
           'deviceGps': _deviceGps(command),
@@ -101,9 +170,9 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
             'faceRecognition': {
               'selfieImage':
                   'data:${selfie.mimeType};base64,${base64Encode(selfie.bytes)}',
-              'selfieFileSizeBytes': selfie.bytes.length,
-              'selfieMimeType': selfie.mimeType,
             },
+          if (command.selfie != null)
+            'liveness': {'isLiveCapture': true, 'clientSource': 'camera'},
         },
         options: Options(headers: {'Idempotency-Key': command.idempotencyKey}),
       );
@@ -119,18 +188,15 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
 
   @override
   Future<AttendanceDto> clockOut(AttendanceCommand command) async {
-    final current = await getToday();
-    if (!current.toEntity().isActive) {
-      throw const ApiException('Tidak ada attendance aktif.', statusCode: 409);
-    }
+    _requireContext();
     try {
       final response = await _dio.patch<Map<String, dynamic>>(
-        '/attendance/${current.id}/checkout',
+        '/attendance/me/check-out',
         data: {
-          'checkOut': command.capturedAt.toUtc().toIso8601String(),
           'method': command.method.apiValue,
           'checkOutLatitude': command.latitude,
           'checkOutLongitude': command.longitude,
+          'deviceGps': _deviceGps(command),
         },
         options: Options(headers: {'Idempotency-Key': command.idempotencyKey}),
       );
@@ -152,23 +218,17 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
     return value!;
   }
 
-  List<Map<String, dynamic>> _records(Object? data) {
-    final raw = data is List
-        ? data
-        : data is Map<String, dynamic>
-        ? (data['items'] ?? data['records'] ?? data['attendances'])
-        : null;
-    if (raw is! List) return const [];
-    return raw.whereType<Map<String, dynamic>>().toList(growable: false);
-  }
-
-  bool _isToday(Map<String, dynamic> record, DateTime now) {
-    final raw = record['date'] ?? record['checkIn'] ?? record['checkedInAt'];
-    final date = raw is String ? DateTime.tryParse(raw)?.toLocal() : null;
-    return date != null &&
-        date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day;
+  Map<String, dynamic>? _todayAttendance(Map<String, dynamic> data) {
+    for (final key in const ['attendance', 'record', 'today']) {
+      final value = data[key];
+      if (value is Map<String, dynamic>) return value;
+    }
+    if (data.containsKey('id') ||
+        data.containsKey('checkIn') ||
+        data.containsKey('checkedInAt')) {
+      return data;
+    }
+    return null;
   }
 
   Map<String, dynamic> _attendanceObject(Map<String, dynamic> data) {
@@ -179,15 +239,12 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
   Map<String, dynamic> _deviceGps(AttendanceCommand command) => {
     'isMockLocation': command.isMocked,
     'accuracyMeters': command.accuracyMeters,
-    'altitudeMeters': ?command.altitudeMeters,
-    'bearingDegrees': ?command.headingDegrees,
   };
 
-  String _dateOnly(DateTime value) =>
-      '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
-
-  String _dateStartIso(DateTime value) =>
-      DateTime.utc(value.year, value.month, value.day).toIso8601String();
+  int _integer(Object? value, int fallback) => switch (value) {
+    int number => number,
+    num number => number.round(),
+    String text => int.tryParse(text) ?? fallback,
+    _ => fallback,
+  };
 }

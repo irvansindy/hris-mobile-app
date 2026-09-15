@@ -30,7 +30,7 @@ void main() {
     expect(await repository.hasSession(), isTrue);
   });
 
-  test('stores cookie and CSRF credentials after successful login', () async {
+  test('rejects a legacy cookie-only session on native mobile', () async {
     final tokens = _MemoryTokenStorage();
     await tokens.saveTokens(accessToken: 'stale-bearer');
     final repository = AuthRepositoryImpl(
@@ -47,12 +47,11 @@ void main() {
       password: 'secret',
     );
 
-    expect(result, isA<Success>());
+    expect(result, isA<FailureResult>());
     expect(await tokens.readAccessToken(), isNull);
-    expect(await tokens.readCookieHeader(), contains('at=jwt'));
-    expect(await tokens.readCookieHeader(), contains('rt=refresh-jwt'));
-    expect(await tokens.readCsrfToken(), 'csrf-token');
-    expect(await repository.hasSession(), isTrue);
+    expect(await tokens.readCookieHeader(), isNull);
+    expect(await tokens.readCsrfToken(), isNull);
+    expect(await repository.hasSession(), isFalse);
   });
 
   test('non-auth cookies cannot create an authenticated session', () async {
@@ -110,6 +109,7 @@ class _SuccessfulRemote implements AuthRemoteDataSource {
     String? totp,
   }) async => AuthSessionDto(
     accessToken: 'access-token',
+    refreshToken: 'refresh-token',
     email: email,
     userName: 'Test User',
   );

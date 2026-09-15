@@ -11,7 +11,6 @@ import 'package:hrm_app/core/errors/result.dart';
 import 'package:hrm_app/core/network/api_exception.dart';
 import 'package:hrm_app/core/network/dio_client.dart';
 import 'package:hrm_app/core/network/request_context.dart';
-import 'package:hrm_app/core/security/cookie_session.dart';
 import 'package:hrm_app/core/security/session_cookie_store.dart';
 import 'package:hrm_app/core/security/token_storage.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
@@ -40,7 +39,11 @@ Map<String, dynamic> _loginBody(String name) => {
   'message': 'Login successful',
   'data': {
     'user': _user(name),
-    'tokens': {'expiresIn': 900},
+    'tokens': {
+      'accessToken': 'fixture-access',
+      'refreshToken': 'fixture-refresh',
+      'expiresIn': 900,
+    },
   },
 };
 
@@ -53,9 +56,6 @@ void main() {
       () async {
         final session = AuthSessionDto.fromLoginJson(
           _loginBody(role)['data'] as Map<String, dynamic>,
-          authCookie: cookieHeaderFromResponse(
-            Headers.fromMap(_headers('loginHeaders')),
-          ),
         ).toEntity();
         final container = ProviderContainer(
           overrides: [
@@ -87,7 +87,7 @@ void main() {
       },
     );
 
-    test('parses source-shaped $role login with at/rt/csrf cookies', () async {
+    test('parses final mobile bearer login for $role', () async {
       final adapter = _FixtureAdapter(
         body: _loginBody(role),
         headers: _headers('loginHeaders'),
@@ -105,11 +105,12 @@ void main() {
         'email': _user(role)['email'],
         'password': 'fixture-password',
       });
-      expect(dto.accessToken, isNull);
-      expect(dto.usesCookieAuth, isTrue);
-      expect(cookieValue(dto.authCookie, 'at'), 'fixture-access');
-      expect(cookieValue(dto.authCookie, 'rt'), 'fixture-refresh');
-      expect(dto.csrfToken, 'fixture-nonce.fixture-signature');
+      expect(adapter.request?.headers['X-Client-Type'], 'mobile');
+      expect(dto.accessToken, 'fixture-access');
+      expect(dto.refreshToken, 'fixture-refresh');
+      expect(dto.usesCookieAuth, isFalse);
+      expect(dto.authCookie, isNull);
+      expect(dto.csrfToken, isNull);
       expect(dto.expiresIn, 900);
       final entity = dto.toEntity();
       expect(entity.userId, _user(role)['id']);
@@ -144,9 +145,6 @@ void main() {
       final me = await DioAuthRemoteDataSource(dio).me();
       final previous = AuthSessionDto.fromLoginJson(
         _loginBody('employee')['data'] as Map<String, dynamic>,
-        authCookie: cookieHeaderFromResponse(
-          Headers.fromMap(_headers('loginHeaders')),
-        ),
       );
       final updated = previous.mergeUser(me);
 
@@ -169,10 +167,10 @@ void main() {
   ]) {
     test('rejects missing access credentials: $cookie', () {
       expect(
-        () => AuthSessionDto.fromLoginJson(
-          _loginBody('employee')['data'] as Map<String, dynamic>,
-          authCookie: cookie,
-        ),
+        () => AuthSessionDto.fromLoginJson({
+          'tokens': {'expiresIn': 900},
+          'user': _user('employee'),
+        }, authCookie: cookie),
         throwsFormatException,
       );
     });
@@ -180,10 +178,10 @@ void main() {
 
   test('rejects cookie login without CSRF and login without user ID', () {
     expect(
-      () => AuthSessionDto.fromLoginJson(
-        _loginBody('employee')['data'] as Map<String, dynamic>,
-        authCookie: 'at=fixture; rt=fixture',
-      ),
+      () => AuthSessionDto.fromLoginJson({
+        'tokens': {'expiresIn': 900},
+        'user': _user('employee'),
+      }, authCookie: 'at=fixture; rt=fixture'),
       throwsFormatException,
     );
     expect(
@@ -225,6 +223,24 @@ void main() {
     });
   });
 
+  test('native login rejects a response without rotated token pair', () async {
+    final body = _loginBody('employee');
+    final data = body['data'] as Map<String, dynamic>;
+    data['tokens'] = {'accessToken': 'access-only', 'expiresIn': 900};
+    final adapter = _FixtureAdapter(body: body);
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+
+    await expectLater(
+      DioAuthRemoteDataSource(
+        dio,
+      ).login(email: 'employee@example.test', password: 'fixture-password'),
+      throwsFormatException,
+    );
+
+    expect(adapter.request?.headers['X-Client-Type'], 'mobile');
+  });
+
   test('change password uses the verified backend contract', () async {
     final adapter = _FixtureAdapter(
       body: const {'success': true, 'data': null},
@@ -240,7 +256,7 @@ void main() {
     expect(adapter.request?.method, 'POST');
     expect(adapter.request?.path, '/auth/change-password');
     expect(adapter.request?.data, {
-      'currentPassword': 'OldPassword1!',
+      'oldPassword': 'OldPassword1!',
       'newPassword': 'NewPassword2@',
     });
   });
@@ -295,7 +311,7 @@ void main() {
   });
 
   test(
-    'native local HTTP login, me, cookie refresh and logout contract',
+    'native local HTTP login, me, bearer refresh and logout contract',
     () => HttpOverrides.runWithHttpOverrides(() async {
       FlutterSecureStorage.setMockInitialValues({});
       const storage = SecureTokenStorage(FlutterSecureStorage());
@@ -308,6 +324,8 @@ void main() {
               String method,
               String? cookie,
               String? csrf,
+              String? auth,
+              String? clientType,
               String body,
             })
           >[];
@@ -320,6 +338,8 @@ void main() {
           method: request.method,
           cookie: request.headers.value('cookie'),
           csrf: request.headers.value('x-csrf-token'),
+          auth: request.headers.value('authorization'),
+          clientType: request.headers.value('x-client-type'),
           body: body,
         ));
         request.response.headers.contentType = ContentType.json;
@@ -342,10 +362,17 @@ void main() {
           }
         } else if (path.endsWith('/refresh')) {
           response = {
-            ..._loginBody('employee'),
+            'success': true,
             'message': 'Token refreshed successfully',
+            'data': {
+              'user': _user('employee'),
+              'tokens': {
+                'accessToken': 'fixture-access-next',
+                'refreshToken': 'fixture-refresh-next',
+                'expiresIn': 900,
+              },
+            },
           };
-          headerFixture = 'refreshHeaders';
         } else if (path.endsWith('/logout')) {
           response = {
             'success': true,
@@ -403,14 +430,13 @@ void main() {
         password: 'fixture-password',
       );
       expect(result, isA<Success>());
-      expect(await storage.readCsrfToken(), 'fixture-nonce.fixture-signature');
+      expect(await storage.readAccessToken(), 'fixture-access');
+      expect(await storage.readRefreshToken(), 'fixture-refresh');
+      expect(await storage.readCsrfToken(), isNull);
       expect(await remote.me(), _user('employee'));
       expect(await remote.me(), _user('employee'));
-      expect(await storage.readCsrfToken(), 'fixture-next.fixture-signature');
-      expect(
-        cookieValue(await storage.readCookieHeader(), 'at'),
-        'fixture-access-next',
-      );
+      expect(await storage.readAccessToken(), 'fixture-access-next');
+      expect(await storage.readRefreshToken(), 'fixture-refresh-next');
       await repository.logout();
 
       expect(requests.map((r) => r.path), [
@@ -426,18 +452,24 @@ void main() {
         'email': 'employee-a@example.test',
         'password': 'fixture-password',
       });
+      expect(requests.first.clientType, 'mobile');
       expect(requests[1].csrf, isNull);
-      expect(cookieValue(requests[1].cookie, 'at'), 'fixture-access');
+      expect(requests[1].cookie, isNull);
+      expect(requests[1].auth, 'Bearer fixture-access');
       expect(requests[3].method, 'POST');
-      expect(requests[3].body, isEmpty);
-      expect(cookieValue(requests[3].cookie, 'rt'), 'fixture-refresh');
-      expect(requests[3].csrf, 'fixture-nonce.fixture-signature');
+      expect(requests[3].clientType, 'mobile');
+      expect(jsonDecode(requests[3].body), {'refreshToken': 'fixture-refresh'});
+      expect(requests[3].cookie, isNull);
+      expect(requests[3].csrf, isNull);
       expect(requests[4].csrf, isNull);
-      expect(cookieValue(requests[4].cookie, 'at'), 'fixture-access-next');
+      expect(requests[4].auth, 'Bearer fixture-access-next');
       expect(requests.last.method, 'POST');
-      expect(requests.last.body, isEmpty);
-      expect(requests.last.csrf, 'fixture-next.fixture-signature');
-      expect(cookieValue(requests.last.cookie, 'rt'), 'fixture-refresh-next');
+      expect(jsonDecode(requests.last.body), {
+        'refreshToken': 'fixture-refresh-next',
+      });
+      expect(requests.last.auth, isNull);
+      expect(requests.last.cookie, isNull);
+      expect(requests.last.csrf, isNull);
       expect(await storage.readSession(), isNull);
       expect(await storage.readCookieHeader(), isNull);
       expect(await storage.readCsrfToken(), isNull);

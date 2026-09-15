@@ -34,7 +34,9 @@ class ValidationFailure extends Failure {
 }
 
 class RateLimitFailure extends Failure {
-  const RateLimitFailure(super.message);
+  const RateLimitFailure(super.message, {this.retryAfterSeconds});
+
+  final int? retryAfterSeconds;
 }
 
 class CacheFailure extends Failure {

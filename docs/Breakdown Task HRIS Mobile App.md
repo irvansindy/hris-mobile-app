@@ -23,7 +23,7 @@ Pekerjaan visual P3 dimulai setelah blocker P0 ditutup. CI, i18n dasar, dan rout
 
 ### HRIS-001 — P0: pastikan kontrak autentikasi dan identitas ESS
 
-**Status: REVIEW — source terverifikasi dan test lokal selesai; verifikasi akun/server live ditunda sesuai instruksi pengguna.** Bukti dan batas pengujian: [laporan HRIS-001](<HRIS-001 Kontrak Autentikasi dan Identitas.md>).
+**Status: REVIEW. Kontrak final mobile Bearer diterapkan dan test lokal selesai; verifikasi akun/server live masih tertunda.** Dokumen final backend 12 September 2026 menggantikan hasil audit cookie-native sebelumnya. Bukti aktif: [API Integration Revision](<API_INTEGRATION_REVISION.md>).
 
 **Owner:** Mobile + Backend + QA. **Dependency:** akses source/OpenAPI backend atau respons tersanitasi dan akun uji. **Acuan audit:** DEV-01, F05/F10.
 
@@ -137,11 +137,11 @@ change-password diuji. Bukti dan batas live test: [laporan HRIS-008–012](<HRIS
 
 | ID / prioritas | Cakupan task | Dependency / owner | Kriteria selesai |
 |---|---|---|---|
-| HRIS-009 · P0 · REVIEW | Kontrak context/check-in/checkout terverifikasi dan fixture lokal lulus. Server time, idempotency, face pipeline, dan anti-manipulasi server ditemukan belum selesai dan diteruskan ke HRIS-013. | HRIS-001; Mobile + Backend | Fixture policy/check-in/check-out; aturan multi-shift, akurasi, waktu dan penolakan terdokumentasi. Gap server menjadi task backend yang eksplisit. |
+| HRIS-009 · P0 · DONE lokal / LIVE REVIEW | Kontrak final self-service `/attendance/me/*` diterapkan dan fixture lokal lulus. Identity dan timestamp client sudah dihapus dari payload. Response deployment belum diverifikasi. | HRIS-001; Mobile + Backend | Fixture policy/check-in/check-out; aturan multi-shift, akurasi, waktu dan penolakan terdokumentasi. Gap server menjadi task backend yang eksplisit. |
 | HRIS-010 · P0 · DONE lokal | GPS hardcode diganti geolocator; model accuracy/mock/timestamp/altitude/heading, permission platform, error, timeout, dan CTA settings diterapkan. Smoke test perangkat masih wajib. | HRIS-009; Mobile + QA perangkat | Lokasi nyata diperoleh; permission denial/cancel/GPS mati/akurasi buruk/mock menghasilkan state yang benar, tidak meninggalkan loading. |
-| HRIS-011 · P0 · MOBILE DONE / BACKEND BLOCKED | Kamera depan, kompresi, preview/cancel, payload data URI, batas ukuran, dan cleanup selesai. Backend sengaja fail-closed 503 sampai verifikasi wajah tepercaya tersedia. | HRIS-006/009; Mobile + Backend + QA | Attachment diterima server; batal/gagal upload tidak dianggap verified. Label face recognition tidak aktif tanpa verifikasi nyata. |
-| HRIS-012 · P0 · DONE lokal | Home membuka alur yang sama; context/record server, payload GPS/selfie, state, server rejection, dan double-submit guard selesai serta diuji. Live account/device test masih tertunda. | HRIS-003/004/005/008/010/011; Mobile | Status kedua layar berasal dari hasil server; error tidak menjadi sukses; transaksi tidak ganda; aturan clock-in ulang sesuai shift. |
-| HRIS-013 · P0 | Verifikasi/perbaiki geofence dan otorisasi server, server time, accuracy/mock policy, upload validation, dan replay. | HRIS-009/012; Backend + Mobile + QA | Skenario di luar radius, payload dimodifikasi, identitas berbeda, timestamp palsu dan duplikasi diuji. Pengakuan `isMocked=false` dari client saja tidak diterima sebagai bukti anti-manipulasi. |
+| HRIS-011 · P0 · MOBILE DONE / LIVE REVIEW | Kamera depan, kompresi, preview/cancel, payload raw selfie data URI, liveness metadata, batas ukuran, dan cleanup selesai. Dokumen final menyatakan pipeline face server tersedia; keberhasilannya belum dibuktikan pada deployment. | HRIS-006/009; Mobile + Backend + QA | Attachment diterima server; batal/gagal upload tidak dianggap verified. Label face recognition tidak aktif tanpa verifikasi nyata. |
+| HRIS-012 · P0 · DONE lokal / LIVE REVIEW | Home dan Attendance memakai endpoint self-service yang sama; context/record server, payload GPS/selfie, state, server rejection, server-time request, dan double-submit guard selesai serta diuji. Live account/device test masih tertunda. | HRIS-003/004/005/008/010/011; Mobile | Status kedua layar berasal dari hasil server; error tidak menjadi sukses; transaksi tidak ganda; aturan clock-in ulang sesuai shift. |
+| HRIS-013 · P0 · REVIEW backend live | Dokumen final menyatakan geofence, identity, server time, accuracy/mock, liveness/face dan rate limit ditegakkan server. Mobile sudah berhenti mengirim identity/timestamp, tetapi pengujian payload modifikasi, replay, dan server idempotency belum tersedia. | HRIS-009/012; Backend + Mobile + QA | Skenario di luar radius, payload dimodifikasi, identitas berbeda, timestamp palsu dan duplikasi diuji. Pengakuan `isMocked=false` dari client saja tidak diterima sebagai bukti anti-manipulasi. |
 | HRIS-014 · P0 | Ambil riwayat/policy dari server; sinkronkan tanggal, nama kantor, status, durasi, tahun, pagination dan timezone WIB/WITA/WIT. | HRIS-009/012; Mobile | Tidak ada riwayat Juni 2025 atau jam tetap; uji pergantian hari/bulan/tahun dan zona waktu kantor. |
 
 **Gate B:** HRIS-009–014 selesai dan smoke test perangkat serta server tersedia. Absensi dapat digunakan untuk uji operasional terbatas; ini belum berarti aplikasi siap rilis penuh.
@@ -260,10 +260,11 @@ Test regresi dibuat bersama perbaikan berisiko: isolasi akun, rotasi token, dupl
 
 ## 11. Titik mulai development
 
-HRIS-001 sampai HRIS-008 sudah selesai untuk lingkup lokal. HRIS-009 sampai
-HRIS-012 telah diimplementasikan di mobile; HRIS-011 masih diblokir pipeline
-face recognition backend. Urutan berikutnya adalah **HRIS-013** untuk menutup
-server time, idempotency, geofence/anti-manipulasi dan verifikasi wajah, lalu
-**HRIS-014** untuk riwayat serta timezone absensi.
+HRIS-001 sampai HRIS-012 sudah diselaraskan secara lokal dengan kontrak final
+mobile Bearer dan endpoint absensi self-service. Verifikasi deployment,
+geofence/face/liveness, replay/idempotency, serta smoke test perangkat masih
+menjadi **HRIS-013**. Setelah itu lanjutkan **HRIS-014** untuk riwayat dan
+timezone absensi; path riwayat sudah diketahui tetapi response schema belum
+disediakan.
 
 Urutan ini mengatasi masalah paling berisiko terlebih dahulu: data akun tertukar, token hasil refresh rusak, dan absensi yang tampak berhasil tetapi tidak tercatat.

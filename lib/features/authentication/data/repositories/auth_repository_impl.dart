@@ -3,6 +3,7 @@ import 'package:hrm_app/core/errors/failure.dart';
 import 'package:hrm_app/core/errors/result.dart';
 import 'package:hrm_app/core/network/api_error_mapper.dart';
 import 'package:hrm_app/core/network/api_exception.dart';
+import 'package:hrm_app/core/network/platform_http.dart';
 import 'package:hrm_app/core/security/session_cookie_store.dart';
 import 'package:hrm_app/core/security/token_storage.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
@@ -42,7 +43,11 @@ class AuthRepositoryImpl implements AuthRepository {
         }
         return const Success(null);
       }
-      AuthSessionDto.fromStoredJson(stored);
+      final storedDto = AuthSessionDto.fromStoredJson(stored);
+      if (!usesBrowserCookieStore && !_hasMobileBearerTokens(storedDto)) {
+        await _lifecycle.protect(revision, _tokens.clear);
+        return const Success(null);
+      }
       if (!_lifecycle.isCurrent(revision)) return const Success(null);
       final me = await _remote.me();
       final user = me['user'] is Map<String, dynamic>
@@ -156,10 +161,9 @@ class AuthRepositoryImpl implements AuthRepository {
     final snapshot = await _lifecycle.protect(revision, () async {
       final refresh = await _tokens.readRefreshToken();
       final storedSession = await _tokens.readSession();
-      final headers = await _cookies.headersFor(
-        _authUri('logout'),
-        method: 'POST',
-      );
+      final headers = usesBrowserCookieStore
+          ? await _cookies.headersFor(_authUri('logout'), method: 'POST')
+          : const <String, String>{};
       await _tokens.clear();
       return (
         refresh: refresh,
@@ -190,6 +194,11 @@ class AuthRepositoryImpl implements AuthRepository {
     AuthSessionDto dto, {
     bool replaceCredentials = false,
   }) async {
+    if (!usesBrowserCookieStore && !_hasMobileBearerTokens(dto)) {
+      throw const FormatException(
+        'Respons login mobile tidak memuat access token dan refresh token.',
+      );
+    }
     if (replaceCredentials) await _tokens.clear();
     Set<String> acceptedCookies = const {};
     if (dto.authSetCookies.isNotEmpty) {
@@ -223,6 +232,12 @@ class AuthRepositoryImpl implements AuthRepository {
   void _requireUserId(AuthSessionDto dto) {
     if (dto.userId == null) throw const FormatException('User ID is missing');
   }
+
+  bool _hasMobileBearerTokens(AuthSessionDto dto) =>
+      dto.accessToken != null &&
+      dto.accessToken!.isNotEmpty &&
+      dto.refreshToken != null &&
+      dto.refreshToken!.isNotEmpty;
 
   Uri _authUri(String action) {
     final base = _cookies.baseUri.toString().replaceFirst(RegExp(r'/+$'), '');

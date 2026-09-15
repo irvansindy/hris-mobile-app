@@ -3,29 +3,41 @@ import 'package:hrm_app/features/attendance/domain/entities/attendance_context.d
 class AttendanceContextDto {
   const AttendanceContextDto({required this.value});
 
-  factory AttendanceContextDto.fromJson(Map<String, dynamic> json) {
-    final policy = _map(json['policy']);
+  factory AttendanceContextDto.fromJson(
+    Map<String, dynamic> json, {
+    String? employeeId,
+    String? companyId,
+  }) {
+    final policy = _map(json['policy'] ?? json['attendancePolicy']);
     final schedule = _map(json['schedule']);
     final branch = _map(json['branch']);
-    final methods = (json['allowedMethods'] as List? ?? const [])
-        .whereType<String>()
-        .map(_method)
-        .whereType<AttendanceCaptureMethod>()
-        .toSet();
-    final employeeId = json['employeeId'] as String?;
-    final companyId = json['companyId'] as String?;
-    if (employeeId == null || companyId == null || methods.isEmpty) {
+    final methods =
+        ((json['allowedMethods'] ?? policy['allowedMethods']) as List? ??
+                const [])
+            .whereType<String>()
+            .map(_method)
+            .whereType<AttendanceCaptureMethod>()
+            .toSet();
+    final resolvedEmployeeId = json['employeeId'] as String? ?? employeeId;
+    final resolvedCompanyId = json['companyId'] as String? ?? companyId;
+    if (resolvedEmployeeId == null ||
+        resolvedCompanyId == null ||
+        methods.isEmpty) {
       throw const FormatException('Attendance context is incomplete');
     }
     return AttendanceContextDto(
       value: AttendanceContext(
-        employeeId: employeeId,
-        companyId: companyId,
+        employeeId: resolvedEmployeeId,
+        companyId: resolvedCompanyId,
         branchName: branch['name'] as String?,
         branchCode: branch['code'] as String?,
         allowedMethods: methods,
-        requiresLocation: policy['requiresLocation'] as bool? ?? false,
-        requiresSelfie: policy['requiresSelfie'] as bool? ?? false,
+        requiresLocation:
+            (json['requiresLocation'] ?? policy['requiresLocation']) as bool? ??
+            false,
+        requiresSelfie:
+            (json['requiresSelfie'] ?? policy['requiresSelfie']) as bool? ??
+            false,
         gpsRadiusMeters: (policy['gpsRadiusMeters'] as num?)?.toDouble(),
         isWorkingDay: schedule['isWorkingDay'] as bool? ?? false,
         allowHolidayAttendance:

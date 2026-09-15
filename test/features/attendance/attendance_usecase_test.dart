@@ -38,7 +38,7 @@ void main() {
         repository,
         location,
         idempotencyKey: () => 'request-1',
-      )('employee-1', selfie: selfie);
+      )(selfie: selfie);
 
       expect(result, isA<Success<AttendanceEntity>>());
       expect(repository.clockInCalls, 1);
@@ -67,7 +67,7 @@ void main() {
     );
 
     await expectLater(
-      ClockIn(repository, location)('employee-1'),
+      ClockIn(repository, location)(),
       throwsA(
         isA<LocationException>().having(
           (error) => error.kind,
@@ -86,7 +86,7 @@ void main() {
     );
 
     await expectLater(
-      ClockOut(repository, location)('employee-1'),
+      ClockOut(repository, location)(),
       throwsA(
         isA<LocationException>().having(
           (error) => error.kind,
@@ -114,7 +114,7 @@ class _Location implements LocationGateway {
   Future<bool> openLocationSettings() async => true;
 }
 
-class _Repository implements AttendanceRepository {
+class _Repository extends AttendanceRepository {
   AttendanceCommand? command;
   int clockInCalls = 0;
   int clockOutCalls = 0;
@@ -126,7 +126,7 @@ class _Repository implements AttendanceRepository {
     return Success(
       AttendanceEntity(
         id: 'attendance-1',
-        userId: value.employeeId,
+        userId: 'employee-1',
         checkedInAt: value.capturedAt,
         status: AttendanceStatus.onTime,
         latitude: value.latitude,
@@ -142,7 +142,7 @@ class _Repository implements AttendanceRepository {
     return Success(
       AttendanceEntity(
         id: 'attendance-1',
-        userId: value.employeeId,
+        userId: 'employee-1',
         checkedInAt: value.capturedAt.subtract(const Duration(hours: 8)),
         checkedOutAt: value.capturedAt,
         status: AttendanceStatus.completed,

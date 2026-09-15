@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hrm_app/core/errors/result.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/storage/preferences.dart';
+import 'package:hrm_app/core/widgets/app_navigation.dart';
 import 'package:hrm_app/features/attendance/attendance_dependencies.dart';
 import 'package:hrm_app/features/attendance/data/datasources/attendance_remote_datasource.dart';
 import 'package:hrm_app/features/attendance/data/dto/attendance_dto.dart';
@@ -66,17 +67,19 @@ void main() {
         UncontrolledProviderScope(container: container, child: const HrmsApp()),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Profile'));
+      await tester.tap(find.text('Profil'));
       await tester.pumpAndSettle();
       expect(find.text('Account A'), findsOneWidget);
       expect(
-        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-        4,
+        tester
+            .widget<AppFloatingNavigation>(find.byType(AppFloatingNavigation))
+            .selectedIndex,
+        3,
       );
       await container
           .read(requestControllerProvider.notifier)
           .submit('Private request A');
-      final context = tester.element(find.byType(NavigationBar));
+      final context = tester.element(find.byType(AppFloatingNavigation));
       Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => const Scaffold(body: Text('Private draft A')),
@@ -90,11 +93,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Private draft A'), findsNothing);
       expect(find.text('Account A'), findsNothing);
-      expect(find.text('Alamat email'), findsOneWidget);
+      expect(find.text('EMAIL KANTOR'), findsOneWidget);
       await controller.login(email: 'B', password: 'fixture');
       await tester.pumpAndSettle();
       expect(
-        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        tester
+            .widget<AppFloatingNavigation>(find.byType(AppFloatingNavigation))
+            .selectedIndex,
         0,
       );
       expect(
@@ -105,7 +110,7 @@ void main() {
         container.read(requestControllerProvider).map((r) => r.type),
         isNot(contains('Private request A')),
       );
-      await tester.tap(find.text('Profile'));
+      await tester.tap(find.text('Profil'));
       await tester.pumpAndSettle();
       expect(find.text('Account B'), findsOneWidget);
       expect(find.text('Account A'), findsNothing);
@@ -141,7 +146,7 @@ class _Repository implements AuthRepository {
   Future<void> logout() async {}
 }
 
-class _AttendanceRemote implements AttendanceRemoteDataSource {
+class _AttendanceRemote extends AttendanceRemoteDataSource {
   @override
   Future<AttendanceDto> getToday() async => const AttendanceDto(
     id: '',

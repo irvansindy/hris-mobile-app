@@ -60,11 +60,14 @@ void main() {
       'employee@example.test',
     );
     await tester.enterText(find.byType(TextFormField).at(1), 'Password1!');
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Masuk'));
+    final firstSubmit = find.widgetWithText(ElevatedButton, 'Masuk');
+    await tester.ensureVisible(firstSubmit);
+    await tester.pumpAndSettle();
+    await tester.tap(firstSubmit);
     await tester.pumpAndSettle();
 
     expect(find.text('Kode autentikator'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField).at(1), '123456');
+    await tester.enterText(find.byKey(const ValueKey('login-mfa')), '123456');
     final submit = find.widgetWithText(ElevatedButton, 'Masuk');
     await tester.ensureVisible(submit);
     await tester.pumpAndSettle();
@@ -89,12 +92,15 @@ void main() {
     await tester.enterText(find.byType(TextFormField).at(0), 'OldPassword1!');
     await tester.enterText(find.byType(TextFormField).at(1), 'NewPassword2@');
     await tester.enterText(find.byType(TextFormField).at(2), 'NewPassword2@');
-    await tester.tap(find.text('Simpan dan masuk kembali'));
+    final submit = find.text('Simpan dan masuk kembali');
+    await tester.ensureVisible(submit);
+    await tester.pumpAndSettle();
+    await tester.tap(submit);
     await tester.pumpAndSettle();
 
     expect(repository.changed, isTrue);
     expect(repository.loggedOut, isTrue);
-    expect(find.text('Alamat email'), findsOneWidget);
+    expect(find.text('EMAIL KANTOR'), findsOneWidget);
     expect(
       find.text('Kata sandi berhasil diubah. Silakan masuk kembali.'),
       findsOneWidget,

@@ -147,6 +147,11 @@ class AuthInterceptor extends Interceptor {
         return;
       }
       final headers = <String, String>{...?storedHeaders};
+      if (!usesBrowserCookieStore) {
+        headers
+          ..remove('Cookie')
+          ..remove('X-CSRF-Token');
+      }
       if (options.uri.path.endsWith('/auth/login')) {
         headers
           ..remove('Authorization')
@@ -188,7 +193,7 @@ class AuthInterceptor extends Interceptor {
       return;
     }
     try {
-      if (!request.uri.path.endsWith('/auth/login')) {
+      if (usesBrowserCookieStore && !request.uri.path.endsWith('/auth/login')) {
         await _lifecycle.protect(
           request.extra['sessionRevision'] as int,
           () => _cookies.capture(response.headers, request.uri),

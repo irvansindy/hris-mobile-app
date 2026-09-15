@@ -43,13 +43,21 @@ class DioAuthRemoteDataSource implements AuthRemoteDataSource {
           'password': password,
           if (totp != null && totp.trim().isNotEmpty) 'totp': totp.trim(),
         },
-        options: _options,
+        options: Options(
+          headers: {if (!usesBrowserCookieStore) 'X-Client-Type': 'mobile'},
+          extra: _options.extra,
+        ),
       );
       return AuthSessionDto.fromLoginJson(
         ApiEnvelope.fromJson(response.data ?? const {}).requireObjectData(),
-        authCookie: cookieHeaderFromResponse(response.headers),
-        authSetCookies: setCookieHeadersFromResponse(response.headers),
+        authCookie: usesBrowserCookieStore
+            ? cookieHeaderFromResponse(response.headers)
+            : null,
+        authSetCookies: usesBrowserCookieStore
+            ? setCookieHeadersFromResponse(response.headers)
+            : const [],
         assumeBrowserCookieAuth: usesBrowserCookieStore,
+        requireBearerTokens: !usesBrowserCookieStore,
       );
     } on DioException catch (error) {
       throw mapDioException(error);
@@ -64,7 +72,7 @@ class DioAuthRemoteDataSource implements AuthRemoteDataSource {
     try {
       await _dio.post<Map<String, dynamic>>(
         '/auth/change-password',
-        data: {'currentPassword': currentPassword, 'newPassword': newPassword},
+        data: {'oldPassword': currentPassword, 'newPassword': newPassword},
         options: _options,
       );
     } on DioException catch (error) {

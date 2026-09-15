@@ -7,6 +7,11 @@ class AttendanceEntity {
     required this.status,
     required this.latitude,
     required this.longitude,
+    this.workDate,
+    this.branchName,
+    this.officeTimezone,
+    this.isWithinRadius,
+    this.requiresReview = false,
   });
 
   final String id;
@@ -16,6 +21,11 @@ class AttendanceEntity {
   final AttendanceStatus status;
   final double latitude;
   final double longitude;
+  final DateTime? workDate;
+  final String? branchName;
+  final String? officeTimezone;
+  final bool? isWithinRadius;
+  final bool requiresReview;
 
   bool get isActive => id.isNotEmpty && checkedOutAt == null;
 }

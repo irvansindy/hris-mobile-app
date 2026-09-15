@@ -1,5 +1,12 @@
 # HRIS-001 — Kontrak Autentikasi dan Identitas Employee/Company
 
+> **Superseded untuk native mobile pada 12 September 2026.** Kontrak final dari
+> backend menetapkan Bearer-only dengan `X-Client-Type: mobile`, token pada
+> response body, tanpa CSRF, refresh token rotation, dan payload change-password
+> `{oldPassword,newPassword}`. Dokumen ini dipertahankan sebagai catatan audit
+> source backend lama. Acuan aktif ada di
+> [API Integration Revision](<API_INTEGRATION_REVISION.md>).
+
 Tanggal: 10 September 2026.
 
 Status: **source backend terverifikasi; implementasi mapping dan pengujian lokal selesai.** Pengujian akun/server live ditunda sesuai instruksi pengguna karena akun khusus uji belum tersedia. Status ini tidak membuktikan bahwa deployment server sama dengan source lokal.

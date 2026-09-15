@@ -19,7 +19,7 @@ import 'package:hrm_app/features/authentication/data/dto/auth_session_dto.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  for (final cookieAuth in [false, true]) {
+  for (final cookieAuth in [false]) {
     _localTest(
       'restore retains rotated credentials, cookie=$cookieAuth',
       () async {
@@ -56,6 +56,21 @@ void main() {
       },
     );
   }
+
+  _localTest('native restore removes a legacy cookie-only session', () async {
+    final fixture = await _Server.start(cookieAuth: true);
+
+    final result = await fixture.container
+        .read(authRepositoryProvider)
+        .restoreSession();
+
+    expect(result, isA<Success>());
+    expect((result as Success).value, isNull);
+    expect(fixture.refreshCalls, 0);
+    expect(fixture.calls('/auth/me'), 0);
+    expect(await fixture.storage.readSession(), isNull);
+    expect(await fixture.storage.readCookieHeader(), isNull);
+  });
 
   _localTest(
     'concurrent 401 across auth and feature clients shares one refresh',
@@ -250,7 +265,7 @@ void main() {
   _localTest(
     'POST retry preserves method, query, body and custom headers',
     () async {
-      final fixture = await _Server.start(cookieAuth: true);
+      final fixture = await _Server.start();
       await fixture.dio.post<dynamic>(
         '/submit',
         queryParameters: {'companyId': 'company-A'},
@@ -268,8 +283,9 @@ void main() {
           'notes': 'fixture',
         });
       }
-      expect(calls.last.csrf, 'new-csrf');
-      expect(cookieValue(calls.last.cookie, 'at'), 'new-access');
+      expect(calls.last.csrf, isNull);
+      expect(calls.last.cookie, isNull);
+      expect(calls.last.auth, 'Bearer new-access');
     },
   );
 
@@ -294,17 +310,11 @@ void main() {
     'success-false',
     'missing-token',
     'wrong-token-type',
-    'non-auth-cookie',
-    'malformed-cookie-bundle',
   ]) {
     _localTest(
       'invalid refresh response $invalid cannot overwrite credentials or retry',
       () async {
-        final fixture = await _Server.start(
-          cookieAuth:
-              invalid == 'non-auth-cookie' ||
-              invalid == 'malformed-cookie-bundle',
-        );
+        final fixture = await _Server.start();
         fixture.invalidRefresh = invalid;
         final result = await fixture.container
             .read(authRepositoryProvider)
@@ -320,15 +330,7 @@ void main() {
         expect(fixture.calls('/auth/me'), 1);
         expect(fixture.refreshCalls, 1);
         expect((await fixture.storage.readSession())?['expiresIn'], 1);
-        if (fixture.cookieAuth) {
-          expect(
-            cookieValue(await fixture.storage.readCookieHeader(), 'at'),
-            'old-access',
-          );
-          expect(await fixture.storage.readCsrfToken(), 'old-csrf');
-        } else {
-          expect(await fixture.storage.readAccessToken(), 'old-access');
-        }
+        expect(await fixture.storage.readAccessToken(), 'old-access');
         expect(fixture.container.read(sessionInvalidationProvider), 0);
       },
     );

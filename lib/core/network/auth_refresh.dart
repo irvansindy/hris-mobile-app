@@ -91,7 +91,8 @@ class AuthRefreshCoordinator {
       return;
     }
     final cookie = snapshot.refreshHeaders['Cookie'];
-    final hasRefreshCookie = cookieValue(cookie, 'rt') != null;
+    final hasRefreshCookie =
+        usesBrowserCookieStore && cookieValue(cookie, 'rt') != null;
     if (!cookieStore.usesBrowserCookies &&
         !hasRefreshCookie &&
         (snapshot.refresh == null || snapshot.refresh!.isEmpty)) {
@@ -126,8 +127,10 @@ class AuthRefreshCoordinator {
             : {'refreshToken': snapshot.refresh},
         options: Options(
           headers: {
-            'Cookie': ?cookie,
-            'X-CSRF-Token': ?snapshot.refreshHeaders['X-CSRF-Token'],
+            if (!usesBrowserCookieStore) 'X-Client-Type': 'mobile',
+            if (usesBrowserCookieStore) 'Cookie': ?cookie,
+            if (usesBrowserCookieStore)
+              'X-CSRF-Token': ?snapshot.refreshHeaders['X-CSRF-Token'],
           },
           followRedirects: false,
         ),
@@ -143,8 +146,8 @@ class AuthRefreshCoordinator {
       final rawTokens = data['tokens'] ?? data;
       if (rawTokens is! Map<String, dynamic>) throw _invalidResponse(response);
       final access = _nonEmptyString(rawTokens['accessToken']);
-      final refresh =
-          _nonEmptyString(rawTokens['refreshToken']) ?? snapshot.refresh;
+      final issuedRefresh = _nonEmptyString(rawTokens['refreshToken']);
+      final refresh = issuedRefresh ?? snapshot.refresh;
       final responseCookie = cookieHeaderFromResponse(response.headers);
       final issuedAccessCookie = cookieValue(responseCookie, 'at');
       final issuedRefreshCookie = cookieValue(responseCookie, 'rt');
@@ -154,9 +157,10 @@ class AuthRefreshCoordinator {
           cookieValue(nextCookie, 'csrf') ??
           _nonEmptyString(data['csrfToken']) ??
           snapshot.refreshHeaders['X-CSRF-Token'];
-      final cookieAuth =
-          cookieStore.usesBrowserCookies || issuedAccessCookie != null;
-      if ((access == null && !cookieAuth) ||
+      final cookieAuth = usesBrowserCookieStore;
+      if ((!usesBrowserCookieStore &&
+              (access == null || issuedRefresh == null)) ||
+          (access == null && !cookieAuth) ||
           (hasRefreshCookie && !cookieAuth) ||
           (!cookieStore.usesBrowserCookies &&
               hasRefreshCookie &&

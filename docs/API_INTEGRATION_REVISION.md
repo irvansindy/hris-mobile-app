@@ -1,154 +1,170 @@
 # HRMS Mobile API Integration Revision
 
-## Scope
+Tanggal penyesuaian awal: 12 September 2026. Pembaruan redesign: 15 September 2026.
 
-This revision prepares the Flutter application for the API documented in
-`API-DOCS-FULL.md` without changing the existing UI. Integration is deliberately
-incremental: authentication and attendance are connected first; modules whose
-response schemas are not documented remain on replaceable local adapters.
+## Sumber kontrak
 
-## Implemented foundation
+Implementasi mobile mengikuti `mobile-api.md` berjudul **HRIS Mobile API
+Reference (Final)** yang diterima dari backend developer. Baseline dokumen
+tersebut adalah branch backend `main` per 12 September 2026.
 
-### Standard API contract
+Dokumen final menggantikan kontrak lama berbasis endpoint admin, query
+`employeeId`/`companyId`, serta cookie auth pada native mobile. Source backend
+lokal yang pernah diaudit masih mencerminkan kontrak lama, sehingga verifikasi
+deployment dan fixture respons nyata tetap dibutuhkan sebelum acceptance.
 
-- `ApiEnvelope` parses the shared `success`, `message`, `data`, and `meta`
-  response structure.
-- Dio errors are normalized into `ApiException`, including HTTP status, backend
-  error code, and validation errors per field.
-- Infrastructure errors are mapped into typed failures: authentication,
-  forbidden, validation, rate limit, network, and server failure.
+## Perbandingan kontrak
 
-### Session security
+| Area | Implementasi/revisi lama | Kontrak final | Penyesuaian mobile |
+|---|---|---|---|
+| Auth native | Cookie `at`/`rt`/`csrf` atau Bearer fallback | Bearer wajib | Native mengabaikan cookie respons login dan mensyaratkan access serta refresh token |
+| Penanda client | Tidak ada | `X-Client-Type: mobile` pada login dan refresh | Header ditambahkan pada kedua request |
+| CSRF native | Ikut cookie auth | Tidak diperlukan untuk Bearer-only | Native tidak mengirim Cookie atau `X-CSRF-Token`; dukungan browser tetap terpisah |
+| Refresh | Cookie `rt` atau body fallback | Body `{refreshToken}`, token selalu dirotasi | Respons tanpa pasangan token baru ditolak |
+| Logout | Cookie/CSRF atau body fallback | Body `{refreshToken}`, access token hidup tidak wajib | Snapshot refresh token dikirim setelah storage lokal dibersihkan |
+| Ganti password | `{currentPassword,newPassword}` | `{oldPassword,newPassword}` | Payload diubah ke `oldPassword` |
+| Status hari ini | `GET /attendance` dengan identity query | `GET /attendance/me/today` | Query identity dihapus |
+| Context/policy | `GET /attendance/context` endpoint admin | Menjadi bagian `/attendance/me/today` | Context memakai identity dari sesi sebagai fallback parsing, bukan request parameter |
+| Check-in | `POST /attendance` dengan employee, company, date, dan waktu device | `POST /attendance/me/check-in` | Identity dan waktu client dihapus dari payload |
+| Check-out | `PATCH /attendance/:id/checkout` | `PATCH /attendance/me/check-out` | ID attendance dan waktu device tidak dikirim |
+| Face payload | Selfie plus MIME/ukuran dalam object face | Hanya `faceRecognition.selfieImage` | Field tambahan dihapus; metadata live camera dikirim melalui `liveness` |
+| GPS metadata | Accuracy, mock, altitude, bearing | `isMockLocation` dan `accuracyMeters` | Payload dibatasi ke field kontrak final |
+| Dashboard attendance | Endpoint summary/list admin | Endpoint today self-service | Dashboard tidak lagi memanggil endpoint attendance admin |
 
-The secure session now stores:
+## Implementasi autentikasi
 
-- access and refresh tokens;
-- token expiry duration;
-- user and employee IDs;
-- active company and company scope;
-- group ID;
-- roles and permissions;
-- `mustChangePassword`;
-- display name and email.
+Pada native mobile:
 
-Sensitive values remain in Keychain/Keystore through
-`flutter_secure_storage`. They are not stored in SharedPreferences.
+1. `POST /auth/login` mengirim `X-Client-Type: mobile` dan body
+   `{email,password,totp?}`.
+2. Respons wajib memiliki `data.user`, `data.tokens.accessToken`, dan
+   `data.tokens.refreshToken`.
+3. Kedua token disimpan di Keychain/Keystore melalui
+   `flutter_secure_storage`.
+4. Protected request mengirim `Authorization: Bearer <accessToken>`.
+5. Satu operasi refresh melayani request 401 yang bersamaan.
+6. Refresh mengirim `X-Client-Type: mobile` dan `{refreshToken}`.
+7. Respons refresh tanpa access token atau refresh token hasil rotasi ditolak
+   dan tidak menimpa kredensial sebelumnya.
+8. Sesi cookie-only yang tersimpan dari versi native lama dihapus saat restore.
+9. Logout membersihkan sesi lokal lebih dulu, kemudian mengirim refresh token
+   snapshot tanpa access token.
 
-### Refresh-token policy
+Transport browser tetap memiliki adapter cookie/CSRF tersendiri. Jalur tersebut
+tidak digunakan sebagai fallback native.
 
-Protected requests receive `Authorization: Bearer <accessToken>` automatically.
-On HTTP 401, the interceptor:
+## Implementasi absensi self-service
 
-1. starts or joins one shared refresh operation;
-2. calls `POST /auth/refresh` with the refresh token;
-3. stores the returned tokens;
-4. retries the original request exactly once;
-5. clears the session and invalidates the auth gate if refresh fails.
+Endpoint yang dipakai mobile:
 
-The single-flight behavior prevents concurrent 401 responses from generating
-multiple refresh requests.
+- `GET /attendance/me/today` untuk record hari ini dan policy/metode;
+- `POST /attendance/me/check-in` untuk check-in;
+- `PATCH /attendance/me/check-out` untuk check-out hari ini.
 
-## Authentication flow
+Payload check-in tidak lagi mengirim `employeeId`, `companyId`, `date`,
+`source`, atau `checkIn`. Server menurunkan identity dari Bearer token dan
+mengisi waktu penerimaan. Payload hanya memuat method, koordinat, metadata GPS,
+serta selfie/liveness ketika metode face recognition dipakai.
 
-The temporary local login bypass has been removed. The flow is now:
+Payload face recognition dibatasi menjadi:
 
-1. validate email and password without changing the login layout;
-2. call `POST /auth/login`;
-3. parse and securely store the complete session;
-4. create the shared employee/company request context;
-5. show the existing Home shell;
-6. on a subsequent launch, restore the session and validate it through
-   `GET /auth/me`;
-7. on sign-out, attempt `POST /auth/logout`, then always clear local data.
-
-Network logout failure never leaves credentials on the device.
-
-## Multi-company context
-
-`requestContextProvider` is the single runtime source for `userId`,
-`employeeId`, active `companyId`, and `companyScope`. The initial active company
-uses `user.companyId`, falling back to the first scoped company. Selection is
-validated so a company outside the user's scope cannot be activated.
-
-A visual company selector is not added in this revision because changing the UI
-was outside scope. The context is ready for that selector later.
-
-## Attendance integration
-
-Attendance now uses the production Dio adapter:
-
-- `GET /attendance` for today's employee record;
-- `POST /attendance` for check-in;
-- `PATCH /attendance/{id}/checkout` for check-out.
-
-`employeeId` and `companyId` come from the authenticated request context, not
-hard-coded presentation values. DTO parsing accepts the documented camelCase
-contract and legacy snake_case keys defensively. The existing Attendance screen
-and interactions are unchanged.
-
-## Dynamic Home and Profile data
-
-After authentication, the existing Home layout is populated from live data:
-
-- employee name, email, and identity context from the authenticated session;
-- complete employee detail from `GET /employees/{employeeId}`;
-- leave cards from `GET /leave/balances/employee`;
-- attendance KPIs from `GET /attendance/summary`;
-- today's clock status from `GET /attendance`;
-- announcements projection from the three newest `GET /notifications` items.
-
-These independent Home requests are loaded in parallel. A failed optional
-endpoint does not erase valid data from another endpoint. Demo identity,
-balances, and announcements are not displayed once an authenticated context is
-available. Pull-to-refresh uses the same API projection without changing the UI.
-
-Payroll values, assets, and certification counts remain outside this dynamic
-projection because no corresponding mobile endpoint or response schema is
-present in the supplied API reference. They must not be treated as verified
-server data until those contracts are provided.
-
-## Modules intentionally still local
-
-Dashboard, Profile, Leave/Self-Service, Calendar, Notifications, Loans, and
-Travel Expenses are not switched to production DTOs yet. The supplied API
-reference lists their endpoints and request bodies, but generally does not
-define the actual successful `data` schemas. Guessing those models would create
-an unstable contract and runtime cast failures.
-
-To integrate each remaining module safely, provide either:
-
-- the source OpenAPI schema containing response models; or
-- one sanitized successful response for every endpoint consumed by the mobile
-  UI.
-
-Recommended next order after schemas are available:
-
-1. Profile (`GET /auth/me` and employee detail);
-2. Leave requests and balances;
-3. Work calendar and holidays;
-4. Notifications;
-5. Dashboard aggregation;
-6. Loans, trips, and expense claims.
-
-## Backend contract warnings
-
-- Production must use HTTPS; the current HTTP host exposes credentials and
-  bearer tokens in transit.
-- `POST /employee-loans` has a documented validator/controller mismatch.
-- Working days must temporarily send the calendar ID in both path and query.
-- Employee attachment upload transport is not documented.
-- `mustChangePassword=true` is stored, but a change-password screen still needs
-  a product-approved UI before navigation can enforce it.
-
-## Quality gates
-
-Run before merging:
-
-```bash
-dart format --output=none --set-exit-if-changed lib test
-flutter analyze
-flutter test
+```json
+{
+  "faceRecognition": {
+    "selfieImage": "data:image/jpeg;base64,..."
+  },
+  "liveness": {
+    "isLiveCapture": true,
+    "clientSource": "camera"
+  }
+}
 ```
 
-Repository and architecture tests continue to protect the Clean Architecture
-dependency boundaries.
+Check-out memakai endpoint self-service tanpa mencari ID attendance melalui
+endpoint admin. Waktu checkout juga tidak dikirim agar server menjadi sumber
+waktu otoritatif.
+
+Client tetap menolak posisi yang ditandai mock dan accuracy di atas 100 meter
+sebagai umpan balik awal. Keputusan geofence, fake GPS, face match, liveness,
+rate limit, dan review wajib tetap dilakukan server.
+
+## Dashboard
+
+Dashboard mengganti pemanggilan `/attendance/summary` dan `/attendance` dengan
+`GET /attendance/me/today`. Persentase bulanan tidak dihitung dari record hari
+ini karena itu akan menghasilkan statistik rekaan. Kartu ringkasan bulanan
+tetap unavailable sampai response schema riwayat atau summary self-service
+tersedia dan dipetakan.
+
+## Penyesuaian redesign Tahap 3 dan 4
+
+Riwayat `GET /attendance/me?month=YYYY-MM`, cuti `/leave` dan `/leave/types`,
+serta izin `/permission-requests/my` dan `/permission-requests` sudah
+diintegrasikan dalam Tahap 3. Bukti dan batas schema ada di laporan RD-009 sampai RD-012.
+
+Tahap 4 menambahkan:
+
+- `GET /work-calendars/me/resolved?year=YYYY&month=M`, tanpa query employee/company;
+- `GET /notifications?limit=N` serta `GET /notifications/unread-count`;
+- `PUT /notifications/read` dengan `{ids:[...]}` dan `PUT /notifications/read-all`;
+- penguatan `GET /employees/:id`: permission `employee:read`, validasi identitas
+  respons, error/retry terlihat, dan nominal gaji tidak diproyeksikan ke state Profil.
+
+Resolved calendar dipetakan dari `employee`, `period`, dan `days` pada source
+lokal sebagai fixture kontrak sementara. Tanggal `YYYY-MM-DD` tidak dikonversi
+ke local timezone. Respons tersebut belum menyertakan timezone kantor, sehingga
+Today saat ini berlabel perangkat. Cuti tim tidak disimpulkan dari cuti pribadi.
+
+Notifications hanya menyediakan limit-only, bukan page/cursor/meta. Muat lebih
+banyak mengambil ulang N notifikasi terbaru dengan limit yang ditambah. Filter
+inbox berlaku pada daftar yang dimuat; unread badge memakai count server.
+Routing resource dibatasi ke route mobile yang tersedia. Payload tidak boleh
+menentukan URL bebas. State dan callback diikat ke lifecycle sesi aktif.
+
+Kontrak chat, device/push registration, konfigurasi Firebase, dokumen profil,
+dan relasi atasan masih belum tersedia untuk integrasi mobile penuh. Tidak ada
+endpoint atau data pengganti yang dibuat. Bukti: [laporan Tahap 4](<RD-013-016 Kalender Notifikasi dan Profil.md>).
+
+## Endpoint yang masih belum diintegrasikan
+
+- koreksi: `/attendance-corrections`;
+- kalender hari libur terpisah: `/work-calendars/holidays/list` (resolved calendar sudah dipakai);
+- penghapusan notifikasi: `DELETE /notifications/:id` (tidak ada kontrol delete dalam handoff);
+- approval: `/workflow-engine/instances/my-approvals` dan actions;
+- payslip: `/payroll/payslips`;
+- loan, EWA, daily activity, travel expense, dan modul ESS lanjutan.
+
+Daftar endpoint saja belum cukup untuk membangun DTO yang stabil. Endpoint
+yang belum memiliki contoh response `data` tetap memerlukan OpenAPI response
+schema atau fixture sukses tersanitasi.
+
+## Catatan keamanan dan deployment
+
+- Base URL production pada dokumen backend masih HTTP. Build production mobile
+  tetap menolak HTTP dan memerlukan URL HTTPS.
+- Certificate pinning menunggu domain dan sertifikat final.
+- Face recognition dan geofence dinyatakan server-authoritative oleh dokumen
+  final, tetapi masih memerlukan pengujian live dengan payload termodifikasi.
+- Kontrak final memakai `oldPassword`, sedangkan source backend lokal lama yang
+  pernah diperiksa memakai `currentPassword`. Deployment harus dipastikan sudah
+  mengikuti dokumen final.
+
+## Quality gate
+
+Test kontrak memverifikasi:
+
+- header mobile pada login dan refresh;
+- penyimpanan dan rotasi pasangan Bearer token;
+- migrasi sesi native cookie-only;
+- payload `oldPassword`;
+- endpoint attendance self-service tanpa identity/timestamp client;
+- pembatasan face payload dan metadata liveness;
+- dashboard tidak lagi memakai endpoint attendance admin.
+- kalender self-service hanya mengirim year/month dan menolak identitas/periode/tanggal tidak sesuai;
+- notifikasi memakai metode PUT yang terdokumentasi serta tidak mengarang page/cursor;
+- profil tidak menyembunyikan error dan tidak menerima data employee/company lain;
+- badge, inbox, read, back navigation, account switch, metadata, dan persistensi tema.
+
+Acceptance live tetap memerlukan akun employee/manager khusus uji, deployment
+yang sesuai baseline dokumen, perangkat Android/iOS, dan fixture response yang
+disanitasi.

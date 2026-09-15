@@ -7,6 +7,8 @@ import 'package:hrm_app/features/attendance/data/dto/attendance_dto.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_command.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_context.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_entity.dart';
+import 'package:hrm_app/features/attendance/domain/entities/attendance_history.dart';
+import 'package:hrm_app/features/attendance/domain/entities/attendance_today.dart';
 import 'package:hrm_app/features/attendance/domain/repositories/attendance_repository.dart';
 
 class AttendanceRepositoryImpl implements AttendanceRepository {
@@ -30,6 +32,20 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   }
 
   @override
+  Future<Result<AttendanceToday>> getTodayState() =>
+      _guardValue(_remote.getTodayState, 'Unexpected attendance context error');
+
+  @override
+  Future<Result<AttendanceHistoryPage>> getHistory({
+    required String month,
+    int page = 1,
+    int limit = 20,
+  }) => _guardValue(
+    () => _remote.getHistory(month: month, page: page, limit: limit),
+    'Unexpected attendance history error',
+  );
+
+  @override
   Future<Result<AttendanceEntity>> clockIn(AttendanceCommand command) =>
       _guard(() => _remote.clockIn(command));
 
@@ -47,6 +63,19 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       return FailureResult(mapApiException(error));
     } catch (_) {
       return const FailureResult(ServerFailure('Unexpected attendance error'));
+    }
+  }
+
+  Future<Result<T>> _guardValue<T>(
+    Future<T> Function() operation,
+    String fallbackMessage,
+  ) async {
+    try {
+      return Success(await operation());
+    } on ApiException catch (error) {
+      return FailureResult(mapApiException(error));
+    } catch (_) {
+      return FailureResult(ServerFailure(fallbackMessage));
     }
   }
 }

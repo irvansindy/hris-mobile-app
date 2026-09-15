@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hrm_app/core/services/clock.dart';
+
 import 'package:hrm_app/core/errors/failure.dart';
 import 'package:hrm_app/core/theme/app_theme.dart';
+import 'package:hrm_app/core/widgets/app_components.dart';
 import 'package:hrm_app/features/authentication/authentication_providers.dart';
 import 'package:hrm_app/features/authentication/presentation/controllers/auth_controller.dart';
 
@@ -13,328 +16,144 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  static const _blue = Color(0xFF2563EB);
-
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _mfaController = TextEditingController();
-  bool _obscurePassword = true;
-  bool _isIndonesian = true;
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _mfa = TextEditingController();
+  bool _obscure = true;
+  bool _indonesian = true;
   bool _requiresMfa = false;
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _mfaController.dispose();
+    _email.dispose();
+    _password.dispose();
+    _mfa.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final pageBackground = isDark ? AppColors.darkBg : AppColors.lightBg;
     final auth = ref.watch(authControllerProvider);
-    final notice = ref.watch(authNoticeProvider);
-    final isLoading = auth.isLoading;
-    final error = auth.hasError
-        ? auth.error is Failure
-              ? (auth.error! as Failure).message
-              : _text(
-                  'Login gagal. Silakan coba lagi.',
-                  'Login failed. Please try again.',
-                )
-        : null;
-
+    final content = _LoginViewport(
+      child: _content(
+        loading: auth.isLoading,
+        error: auth.hasError ? _errorMessage(auth.error) : null,
+        notice: ref.watch(authNoticeProvider),
+      ),
+    );
     return Scaffold(
-      backgroundColor: pageBackground,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final desktop = constraints.maxWidth >= 900;
-          return desktop
-              ? Row(
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (_, constraints) => constraints.maxWidth < 780
+              ? content
+              : Row(
                   children: [
-                    const Expanded(child: _BrandPanel(compact: false)),
-                    Expanded(
-                      child: _FormPanel(
-                        maxWidth: 384,
-                        languageToggle: _buildLanguageToggle(),
-                        form: _buildForm(isLoading, error, notice),
-                      ),
-                    ),
+                    const Expanded(child: _IdentityPanel()),
+                    Expanded(child: content),
                   ],
-                )
-              : _FormPanel(
-                  maxWidth: 440,
-                  languageToggle: _buildLanguageToggle(),
-                  form: _buildForm(isLoading, error, notice),
-                );
-        },
-      ),
-    );
-  }
-
-  Widget _buildLanguageToggle() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-        border: Border.all(
-          color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                ),
         ),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _LanguageButton(
-            label: 'ID',
-            selected: _isIndonesian,
-            onTap: () => setState(() => _isIndonesian = true),
-          ),
-          _LanguageButton(
-            label: 'EN',
-            selected: !_isIndonesian,
-            onTap: () => setState(() => _isIndonesian = false),
-          ),
-        ],
       ),
     );
   }
 
-  Widget _buildForm(bool isLoading, String? error, String? notice) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textPrimary = isDark ? AppColors.darkText : AppColors.lightText;
-    final textSecondary = isDark
-        ? AppColors.darkTextSub
-        : AppColors.lightTextSub;
-    return Form(
+  Widget _content({
+    required bool loading,
+    required String? error,
+    required String? notice,
+  }) => AutofillGroup(
+    child: Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            _text('Masuk', 'Sign in'),
-            style: TextStyle(
-              color: textPrimary,
-              fontSize: 25,
-              height: 1.2,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            _text(
-              'Masukkan kredensial Anda untuk mengakses akun',
-              'Enter your credentials to access your account',
-            ),
-            style: TextStyle(color: textSecondary, fontSize: 14),
+          _Header(
+            indonesian: _indonesian,
+            onLanguage: loading
+                ? (_) {}
+                : (value) => setState(() => _indonesian = value),
           ),
           const SizedBox(height: 34),
-          if (notice != null) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF052E2B)
-                    : const Color(0xFFECFDF5),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: isDark
-                      ? const Color(0xFF0F766E)
-                      : const Color(0xFFA7F3D0),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.check_circle_outline,
-                    size: 18,
-                    color: Color(0xFF059669),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      notice,
-                      style: TextStyle(
-                        color: isDark
-                            ? const Color(0xFF6EE7B7)
-                            : const Color(0xFF065F46),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+          _DatePill(indonesian: _indonesian),
+          const SizedBox(height: 20),
+          Text(
+            _text('Selamat datang\nkembali', 'Welcome\nback'),
+            style: Theme.of(context).textTheme.displayLarge,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _text(
+              'Masuk untuk membuka layanan karyawan Anda.',
+              'Sign in to open your employee services.',
             ),
-            const SizedBox(height: 18),
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 26),
+          if (notice != null) ...[
+            _AuthMessage(message: notice, success: true),
+            const SizedBox(height: 12),
           ],
           if (error != null) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF451A1A)
-                    : const Color(0xFFFEF2F2),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: isDark
-                      ? const Color(0xFF7F1D1D)
-                      : const Color(0xFFFECACA),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    size: 18,
-                    color: Color(0xFFDC2626),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      error,
-                      style: TextStyle(
-                        color: isDark
-                            ? const Color(0xFFFCA5A5)
-                            : const Color(0xFF991B1B),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
+            _AuthMessage(message: error, success: false),
+            const SizedBox(height: 12),
           ],
-          Text(
-            _text('Alamat email', 'Email address'),
-            style: TextStyle(
-              color: textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _emailController,
-            style: TextStyle(color: textPrimary, fontSize: 14),
-            cursorColor: isDark ? AppColors.primaryLight : AppColors.primary,
-            enabled: !isLoading,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-            autofillHints: const [AutofillHints.email],
-            decoration: _inputDecoration('name@company.com'),
-            validator: (value) => value == null || value.trim().isEmpty
-                ? _text('Email wajib diisi', 'Email is required')
-                : null,
+          _CredentialCard(
+            email: _email,
+            password: _password,
+            enabled: !loading,
+            obscure: _obscure,
+            onToggleObscure: () => setState(() => _obscure = !_obscure),
+            onSubmit: _requiresMfa ? null : _submit,
+            text: _text,
           ),
           if (_requiresMfa) ...[
-            const SizedBox(height: 22),
-            Text(
-              _text('Kode autentikator', 'Authenticator code'),
-              style: TextStyle(
-                color: textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 14),
             TextFormField(
-              controller: _mfaController,
-              style: TextStyle(color: textPrimary, fontSize: 14),
-              cursorColor: isDark ? AppColors.primaryLight : AppColors.primary,
-              enabled: !isLoading,
-              keyboardType: TextInputType.text,
+              key: const ValueKey('login-mfa'),
+              controller: _mfa,
+              enabled: !loading,
               textInputAction: TextInputAction.done,
               autofillHints: const [AutofillHints.oneTimeCode],
               onFieldSubmitted: (_) => _submit(),
-              decoration: _inputDecoration(
-                _text(
-                  'Masukkan kode 6 digit atau recovery code',
-                  'Enter the 6-digit or recovery code',
-                ),
+              decoration: InputDecoration(
+                labelText: _text('Kode autentikator', 'Authenticator code'),
+                hintText: _text('Kode MFA', 'MFA code'),
               ),
               validator: (value) {
                 final length = value?.trim().length ?? 0;
-                if (length < 6 || length > 20) {
-                  return _text(
-                    'Kode harus berisi 6 sampai 20 karakter',
-                    'Code must contain 6 to 20 characters',
-                  );
-                }
-                return null;
+                return length < 6 || length > 20
+                    ? _text(
+                        'Kode harus berisi 6 sampai 20 karakter',
+                        'Code must contain 6 to 20 characters',
+                      )
+                    : null;
               },
             ),
           ],
-          const SizedBox(height: 22),
-          Text(
-            _text('Kata sandi', 'Password'),
-            style: TextStyle(
-              color: textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _passwordController,
-            style: TextStyle(color: textPrimary, fontSize: 14),
-            cursorColor: isDark ? AppColors.primaryLight : AppColors.primary,
-            enabled: !isLoading,
-            obscureText: _obscurePassword,
-            textInputAction: TextInputAction.done,
-            autofillHints: const [AutofillHints.password],
-            onFieldSubmitted: (_) => _submit(),
-            decoration:
-                _inputDecoration(
-                  _text('Masukkan kata sandi Anda', 'Enter your password'),
-                ).copyWith(
-                  suffixIcon: IconButton(
-                    tooltip: _obscurePassword
-                        ? 'Show password'
-                        : 'Hide password',
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                      size: 19,
-                      color: textSecondary,
-                    ),
-                  ),
-                ),
-            validator: (value) => value == null || value.isEmpty
-                ? _text('Kata sandi wajib diisi', 'Password is required')
-                : null,
-          ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 26),
           SizedBox(
             width: double.infinity,
-            height: 48,
+            height: 56,
             child: ElevatedButton(
-              onPressed: isLoading ? null : _submit,
-              style: ElevatedButton.styleFrom(
-                elevation: 1,
-                backgroundColor: _blue,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: _blue.withValues(alpha: 0.65),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              child: isLoading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
+              key: const ValueKey('login-submit'),
+              onPressed: loading ? null : _submit,
+              child: loading
+                  ? FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox.square(
+                            dimension: 17,
+                            child: AppLoadingIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(_text('Memverifikasi...', 'Verifying...')),
+                        ],
                       ),
                     )
                   : Text(_text('Masuk', 'Sign in')),
@@ -342,192 +161,279 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  InputDecoration _inputDecoration(String hint) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final hintColor = isDark ? AppColors.darkTextSub : AppColors.lightTextSub;
-    final fillColor = isDark ? AppColors.darkCard : Colors.transparent;
-    final borderColor = isDark ? AppColors.darkBorder : const Color(0xFFDCE3ED);
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(color: hintColor, fontSize: 14),
-      filled: true,
-      fillColor: fillColor,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(7),
-        borderSide: BorderSide(color: borderColor),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(7),
-        borderSide: const BorderSide(color: _blue, width: 1.5),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(7),
-        borderSide: const BorderSide(color: Color(0xFFDC2626)),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(7),
-        borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.5),
-      ),
-    );
-  }
+    ),
+  );
 
   Future<void> _submit() async {
     FocusManager.instance.primaryFocus?.unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    ref.read(loginSuccessPendingProvider.notifier).state = true;
     await ref
         .read(authControllerProvider.notifier)
         .login(
-          email: _emailController.text,
-          password: _passwordController.text,
-          totp: _requiresMfa ? _mfaController.text : null,
+          email: _email.text.trim(),
+          password: _password.text,
+          totp: _requiresMfa ? _mfa.text.trim() : null,
         );
     if (!mounted) return;
     final error = ref.read(authControllerProvider).error;
+    if (error != null) {
+      ref.read(loginSuccessPendingProvider.notifier).state = false;
+    }
     if (error is AuthenticationFailure && error.code == 'MFA_REQUIRED') {
       setState(() => _requiresMfa = true);
     }
   }
 
-  String _text(String id, String en) => _isIndonesian ? id : en;
+  String? _errorMessage(Object? error) => error is Failure
+      ? error.message
+      : _text(
+          'Login gagal. Periksa koneksi lalu coba lagi.',
+          'Login failed. Check your connection and try again.',
+        );
+
+  String _text(String id, String en) => _indonesian ? id : en;
 }
 
-class _FormPanel extends StatelessWidget {
-  const _FormPanel({
-    required this.maxWidth,
-    required this.languageToggle,
-    required this.form,
-  });
-
-  final double maxWidth;
-  final Widget languageToggle;
-  final Widget form;
+class _Header extends StatelessWidget {
+  const _Header({required this.indonesian, required this.onLanguage});
+  final bool indonesian;
+  final ValueChanged<bool> onLanguage;
 
   @override
-  Widget build(BuildContext context) => ColoredBox(
-    color: Theme.of(context).brightness == Brightness.dark
-        ? AppColors.darkBg
-        : AppColors.lightBg,
-    child: SafeArea(
-      minimum: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          languageToggle,
-          Expanded(
-            child: Center(
-              child: SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: form,
-                ),
-              ),
+  Widget build(BuildContext context) {
+    final brand = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: const Text(
+            'H',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 40),
+        ),
+        const SizedBox(width: 10),
+        Text('HRIS', style: Theme.of(context).textTheme.titleMedium),
+      ],
+    );
+    final language = SizedBox(
+      width: 116,
+      child: AppSegmentedControl<bool>(
+        values: const [true, false],
+        selected: indonesian,
+        labelBuilder: (value) => value ? 'ID' : 'EN',
+        onSelected: onLanguage,
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 330 ||
+            MediaQuery.textScalerOf(context).scale(1) > 1.4) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Align(alignment: Alignment.centerRight, child: language),
+              const SizedBox(height: 12),
+              brand,
+            ],
+          );
+        }
+        return Row(children: [brand, const Spacer(), language]);
+      },
+    );
+  }
+}
+
+class _DatePill extends ConsumerWidget {
+  const _DatePill({required this.indonesian});
+  final bool indonesian;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primaryContainer,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+    ),
+    child: Text(
+      '•  ${_dateLabel(ref.watch(clockProvider)(), indonesian)}',
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    ),
+  );
+}
+
+class _CredentialCard extends StatelessWidget {
+  const _CredentialCard({
+    required this.email,
+    required this.password,
+    required this.enabled,
+    required this.obscure,
+    required this.onToggleObscure,
+    required this.onSubmit,
+    required this.text,
+  });
+  final TextEditingController email;
+  final TextEditingController password;
+  final bool enabled;
+  final bool obscure;
+  final VoidCallback onToggleObscure;
+  final VoidCallback? onSubmit;
+  final String Function(String, String) text;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Theme.of(context).colorScheme.surface,
+    elevation: 3,
+    shadowColor: Colors.black.withValues(alpha: 0.16),
+    borderRadius: BorderRadius.circular(AppRadius.largeCard),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+      child: Column(
+        children: [
+          _LoginField(
+            fieldKey: const ValueKey('login-email'),
+            controller: email,
+            icon: Icons.mail_outline_rounded,
+            label: text('Email kantor', 'Work email'),
+            hint: 'nama@perusahaan.com',
+            enabled: enabled,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.email],
+            validator: (value) {
+              final input = value?.trim() ?? '';
+              if (input.isEmpty) {
+                return text('Email wajib diisi', 'Email is required');
+              }
+              if (!input.contains('@') || input.endsWith('@')) {
+                return text(
+                  'Masukkan alamat email yang valid',
+                  'Enter a valid email address',
+                );
+              }
+              return null;
+            },
+          ),
+          Divider(color: Theme.of(context).colorScheme.outlineVariant),
+          _LoginField(
+            fieldKey: const ValueKey('login-password'),
+            controller: password,
+            icon: Icons.lock_outline_rounded,
+            label: text('Kata sandi', 'Password'),
+            hint: text('Masukkan kata sandi', 'Enter password'),
+            enabled: enabled,
+            keyboardType: TextInputType.visiblePassword,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.password],
+            obscureText: obscure,
+            onSubmitted: onSubmit == null ? null : (_) => onSubmit!(),
+            suffix: IconButton(
+              tooltip: obscure
+                  ? text('Tampilkan kata sandi', 'Show password')
+                  : text('Sembunyikan kata sandi', 'Hide password'),
+              onPressed: enabled ? onToggleObscure : null,
+              icon: Icon(
+                obscure
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                size: 19,
+              ),
+            ),
+            validator: (value) => value == null || value.isEmpty
+                ? text('Kata sandi wajib diisi', 'Password is required')
+                : null,
+          ),
         ],
       ),
     ),
   );
 }
 
-class _BrandPanel extends StatelessWidget {
-  const _BrandPanel({required this.compact});
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    constraints: BoxConstraints(minHeight: compact ? 270 : double.infinity),
-    color: _LoginScreenState._blue,
-    padding: EdgeInsets.symmetric(
-      horizontal: compact ? 28 : 72,
-      vertical: compact ? 30 : 48,
-    ),
-    child: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 450),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                'H',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(height: 22),
-            Text(
-              'HRMS Enterprise',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: compact ? 27 : 32,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Platform manajemen SDM lengkap untuk organisasi enterprise. Kelola tenaga kerja Anda secara efisien dengan tools kelas enterprise.',
-              maxLines: compact ? 3 : null,
-              overflow: compact ? TextOverflow.ellipsis : null,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.82),
-                fontSize: compact ? 14 : 18,
-                height: 1.55,
-              ),
-            ),
-            if (!compact) ...[
-              const SizedBox(height: 28),
-              const _Benefit(label: 'Struktur multi-company & group'),
-              const _Benefit(label: 'Siklus hidup karyawan end-to-end'),
-              const _Benefit(label: 'Analitik & reporting lanjutan'),
-              const _Benefit(label: 'Keamanan kelas enterprise'),
-            ],
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _Benefit extends StatelessWidget {
-  const _Benefit({required this.label});
+class _LoginField extends StatelessWidget {
+  const _LoginField({
+    required this.fieldKey,
+    required this.controller,
+    required this.icon,
+    required this.label,
+    required this.hint,
+    required this.enabled,
+    required this.keyboardType,
+    required this.textInputAction,
+    required this.autofillHints,
+    required this.validator,
+    this.obscureText = false,
+    this.onSubmitted,
+    this.suffix,
+  });
+  final Key fieldKey;
+  final TextEditingController controller;
+  final IconData icon;
   final String label;
+  final String hint;
+  final bool enabled;
+  final TextInputType keyboardType;
+  final TextInputAction textInputAction;
+  final Iterable<String> autofillHints;
+  final FormFieldValidator<String> validator;
+  final bool obscureText;
+  final ValueChanged<String>? onSubmitted;
+  final Widget? suffix;
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 14),
+    padding: const EdgeInsets.symmetric(vertical: 8),
     child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.18),
-            shape: BoxShape.circle,
+        Padding(
+          padding: const EdgeInsets.only(top: 17),
+          child: Icon(
+            icon,
+            size: 18,
+            color: Theme.of(context).colorScheme.primary,
           ),
-          child: const Icon(Icons.check, size: 13, color: Colors.white),
         ),
-        const SizedBox(width: 12),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.8),
-            fontSize: 14,
+        const SizedBox(width: 13),
+        Expanded(
+          child: TextFormField(
+            key: fieldKey,
+            controller: controller,
+            enabled: enabled,
+            keyboardType: keyboardType,
+            textInputAction: textInputAction,
+            autofillHints: autofillHints,
+            obscureText: obscureText,
+            onFieldSubmitted: onSubmitted,
+            validator: validator,
+            decoration: InputDecoration(
+              labelText: label.toUpperCase(),
+              hintText: hint,
+              suffixIcon: suffix,
+              filled: false,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              errorBorder: InputBorder.none,
+              focusedErrorBorder: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+                letterSpacing: 0.7,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ),
       ],
@@ -535,43 +441,168 @@ class _Benefit extends StatelessWidget {
   );
 }
 
-class _LanguageButton extends StatelessWidget {
-  const _LanguageButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+class _LoginViewport extends StatelessWidget {
+  const _LoginViewport({required this.child});
+  final Widget child;
 
   @override
-  Widget build(BuildContext context) => ConstrainedBox(
-    constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(5),
-      child: Align(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected ? _LoginScreenState._blue : Colors.transparent,
-            borderRadius: BorderRadius.circular(5),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected
-                  ? Colors.white
-                  : Theme.of(context).brightness == Brightness.dark
-                  ? AppColors.darkTextSub
-                  : const Color(0xFF475569),
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+  Widget build(BuildContext context) => SingleChildScrollView(
+    padding: EdgeInsets.fromLTRB(
+      AppSpacing.screenHorizontal,
+      12,
+      AppSpacing.screenHorizontal,
+      24 + MediaQuery.viewInsetsOf(context).bottom,
+    ),
+    child: ConstrainedBox(
+      constraints: BoxConstraints(
+        minHeight:
+            MediaQuery.sizeOf(context).height -
+            MediaQuery.paddingOf(context).vertical -
+            36,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 430),
+          child: child,
         ),
       ),
     ),
   );
+}
+
+class _IdentityPanel extends StatelessWidget {
+  const _IdentityPanel();
+
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+    color: AppColors.primary,
+    child: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 96,
+            height: 96,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(32),
+            ),
+            child: const Icon(
+              Icons.schedule_rounded,
+              size: 44,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'HRIS Mobile',
+            style: Theme.of(
+              context,
+            ).textTheme.displayMedium?.copyWith(color: Colors.white),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _AuthMessage extends StatelessWidget {
+  const _AuthMessage({required this.message, required this.success});
+  final String message;
+  final bool success;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final foreground = success
+        ? (dark ? AppColors.darkSuccess : AppColors.success)
+        : (dark ? AppColors.darkDanger : AppColors.danger);
+    final background = success
+        ? (dark ? AppColors.darkSuccessBackground : AppColors.successBackground)
+        : (dark ? AppColors.darkDangerBackground : AppColors.dangerBackground);
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              success
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.error_outline_rounded,
+              color: foreground,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: foreground),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _dateLabel(DateTime value, bool id) {
+  const daysId = [
+    'Senin',
+    'Selasa',
+    'Rabu',
+    'Kamis',
+    'Jumat',
+    'Sabtu',
+    'Minggu',
+  ];
+  const monthsId = [
+    'Januari',
+    'Februari',
+    'Maret',
+    'April',
+    'Mei',
+    'Juni',
+    'Juli',
+    'Agustus',
+    'September',
+    'Oktober',
+    'November',
+    'Desember',
+  ];
+  const daysEn = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+  const monthsEn = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  final days = id ? daysId : daysEn;
+  final months = id ? monthsId : monthsEn;
+  return '${days[value.weekday - 1]}, ${value.day} ${months[value.month - 1]}';
 }

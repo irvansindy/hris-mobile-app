@@ -13,7 +13,6 @@ void main() {
 
     final result = await repository.clockOut(
       AttendanceCommand(
-        employeeId: 'employee-1',
         latitude: -6.2,
         longitude: 106.8,
         accuracyMeters: 8,
@@ -31,7 +30,7 @@ void main() {
   });
 }
 
-class _Remote implements AttendanceRemoteDataSource {
+class _Remote extends AttendanceRemoteDataSource {
   _Remote(this.now);
 
   final DateTime now;

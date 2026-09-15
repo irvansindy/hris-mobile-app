@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: f0bbd8333c91b52d879e7c034645887b5768b43a
+  FLUTTER_VERSION: 2553f89be1efa62eeb7b3aeea68fc9f80336ee54
 
 jobs:
   quality:
@@ -41,7 +41,7 @@ jobs:
         run: git diff --exit-code -- pubspec.lock
 
       - name: Verify formatting
-        run: dart format --output=none --set-exit-if-changed lib test tool
+        run: dart format --output=none --set-exit-if-changed lib test tool integration_test
 
       - name: Analyze source
         run: flutter analyze
@@ -65,8 +65,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Upload golden failure images
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: golden-failures
+          path: test/failures
+          if-no-files-found: ignore
+          retention-days: 14
+
   android:
-    name: Build Android production artifact
+    name: Validate Android production build
     needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -102,7 +111,42 @@ jobs:
       - name: Upload Android artifact
         uses: actions/upload-artifact@v7
         with:
-          name: android-appbundle-unsigned-validation
+          name: android-appbundle-debug-signed-validation
           path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    name: Validate iOS production build without signing
+    needs: quality
+    runs-on: macos-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: master
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Build iOS without signing
+        run: >-
+          flutter build ios --release --no-codesign
+          --dart-define=APP_ENV=production
+          --dart-define=BASE_URL=https://ci.invalid/api/v1
+          --dart-define=ENABLE_LOGGING=false
+
+      - name: Upload iOS validation artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-app-unsigned-validation
+          path: build/ios/iphoneos/Runner.app
           if-no-files-found: error
           retention-days: 14

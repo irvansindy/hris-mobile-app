@@ -15,7 +15,9 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   final session = ref.watch(featureSessionProvider);
   return ProfileRepositoryImpl(
     ref.watch(profileLocalDataSourceProvider),
-    DioProfileRemoteDataSource(ref.watch(featureDioProvider)),
+    session.context == null
+        ? null
+        : DioProfileRemoteDataSource(ref.watch(featureDioProvider)),
     () => session.context,
   );
 });

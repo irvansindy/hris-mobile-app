@@ -1,5 +1,10 @@
 # HRIS-008 sampai HRIS-012: Bootstrap dan Absensi Nyata
 
+> **Kontrak endpoint diperbarui 12 September 2026.** Mobile sekarang memakai
+> `/attendance/me/today`, `/attendance/me/check-in`, dan
+> `/attendance/me/check-out`; identity serta waktu tidak lagi dikirim client.
+> Rincian aktif ada di [API Integration Revision](<API_INTEGRATION_REVISION.md>).
+
 Tanggal verifikasi lokal: 12 September 2026.
 
 ## Ringkasan hasil
@@ -61,7 +66,7 @@ lokasi, kamera, serta galeri pada konfigurasi Debug dan Release/Profile.
 ## HRIS-011: selfie
 
 Selfie diambil langsung dari kamera depan dengan `image_picker`, kualitas 72,
-batas dimensi 1280 piksel, dan batas 8 MB. Byte foto dipertahankan di memori
+batas dimensi 1280 piksel, dan batas 5 MB. Byte foto dipertahankan di memori
 untuk preview dan upload; file capture sementara dihapus setelah dibaca.
 Pembatalan kamera tidak dianggap verified atau berhasil. Foto hanya dikirim
 saat check-in dengan metode `FACE_RECOGNITION` yang diizinkan context.

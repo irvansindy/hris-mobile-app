@@ -18,22 +18,16 @@ class ClockIn {
   final LocationGateway _locationService;
   final String Function() _idempotencyKey;
 
-  Future<Result<AttendanceEntity>> call(
-    String employeeId, {
-    CapturedSelfie? selfie,
-  }) async {
+  Future<Result<AttendanceEntity>> call({CapturedSelfie? selfie}) async {
     final position = await _locationService.currentPosition();
     _validate(position);
     return _repository.clockIn(
       AttendanceCommand(
-        employeeId: employeeId,
         latitude: position.latitude,
         longitude: position.longitude,
         accuracyMeters: position.accuracyMeters,
         capturedAt: position.capturedAt,
         isMocked: position.isMocked,
-        altitudeMeters: position.altitudeMeters,
-        headingDegrees: position.headingDegrees,
         method: selfie == null
             ? AttendanceCaptureMethod.mobileGps
             : AttendanceCaptureMethod.faceRecognition,

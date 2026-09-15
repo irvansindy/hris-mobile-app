@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:hrm_app/core/network/api_envelope.dart';
+import 'package:hrm_app/core/network/api_error_mapper.dart';
 import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/features/dashboard/domain/entities/dashboard_snapshot.dart';
 
@@ -21,8 +22,7 @@ class DioDashboardRemoteDataSource implements DashboardRemoteDataSource {
     DashboardSnapshot fallback,
   ) async {
     final employeeId = context.employeeId;
-    final companyId = context.activeCompanyId;
-    if (employeeId == null || companyId == null) {
+    if (employeeId == null || context.activeCompanyId == null) {
       return DashboardSnapshot(
         employee: _employee(context, fallback.employee),
         leaveBalances: const [],
@@ -30,49 +30,51 @@ class DioDashboardRemoteDataSource implements DashboardRemoteDataSource {
       );
     }
 
-    final now = DateTime.now();
-    final responses = await Future.wait<Object?>([
+    final responses = await Future.wait<_SectionResponse>([
       _safeGet('/leave/balances/employee', {'employeeId': employeeId}),
-      _safeGet('/attendance/summary', {
-        'companyId': companyId,
-        'month': now.month,
-        'year': now.year,
-      }),
-      _safeGet('/attendance', {
-        'companyId': companyId,
-        'employeeId': employeeId,
-        'month': now.month,
-      }),
       _safeGet('/notifications', {'limit': 3}),
     ]);
 
-    final balances = _leaveBalances(responses[0]);
-    final attendance = _todayAttendance(responses[2], now);
-    final notifications = _announcements(responses[3]);
+    final balances = _leaveBalances(responses[0].data);
+    final notifications = _announcements(responses[1].data);
     return DashboardSnapshot(
       employee: _employee(context, fallback.employee),
       leaveBalances: balances,
       announcements: notifications,
-      attendance: attendance,
-      monthlySummary: _summary(responses[1], balances, attendance),
-      leaveBalancesAvailable: responses[0] != null,
-      monthlySummaryAvailable: responses[1] != null,
-      attendanceAvailable: responses[2] != null,
-      announcementsAvailable: responses[3] != null,
+      monthlySummary: MonthlySummary(
+        remainingLeave: balances.fold<int>(
+          0,
+          (sum, item) => sum + (item.total - item.used).clamp(0, item.total),
+        ),
+      ),
+      leaveBalancesAvailable: responses[0].error == null,
+      monthlySummaryAvailable: false,
+      attendanceAvailable: false,
+      announcementsAvailable: responses[1].error == null,
+      leaveBalancesError: responses[0].error,
+      announcementsError: responses[1].error,
+      unreadNotifications: _unreadCount(responses[1].data),
     );
   }
 
-  Future<Object?> _safeGet(String path, Map<String, Object?> query) async {
+  Future<_SectionResponse> _safeGet(
+    String path,
+    Map<String, Object?> query,
+  ) async {
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         path,
         queryParameters: query,
       );
-      return ApiEnvelope.fromJson(response.data ?? const {}).data;
-    } on DioException {
-      return null;
+      return _SectionResponse(
+        data: ApiEnvelope.fromJson(response.data ?? const {}).data,
+      );
+    } on DioException catch (error) {
+      return _SectionResponse(error: mapDioException(error).message);
     } on FormatException {
-      return null;
+      return const _SectionResponse(
+        error: 'Format respons server tidak valid.',
+      );
     }
   }
 
@@ -130,80 +132,13 @@ class DioDashboardRemoteDataSource implements DashboardRemoteDataSource {
         .toList(growable: false);
   }
 
-  DashboardAttendance _todayAttendance(Object? data, DateTime now) {
-    final records = _asList(data, const ['items', 'records', 'attendances']);
-    Map<String, dynamic>? today;
-    for (final record in records) {
-      final raw = record['date'] ?? record['checkIn'] ?? record['checkedInAt'];
-      final date = raw is String ? DateTime.tryParse(raw)?.toLocal() : null;
-      if (date != null &&
-          date.year == now.year &&
-          date.month == now.month &&
-          date.day == now.day) {
-        today = record;
-        break;
-      }
-    }
-    if (today == null) return const DashboardAttendance();
-    final checkIn = _date(today, const [
-      'checkIn',
-      'checkedInAt',
-      'checked_in_at',
-    ]);
-    final checkOut = _date(today, const [
-      'checkOut',
-      'checkedOutAt',
-      'checked_out_at',
-    ]);
-    final end = checkOut ?? now;
-    final minutes = checkIn == null
-        ? 0
-        : end.difference(checkIn).inMinutes.clamp(0, 1440);
-    return DashboardAttendance(
-      isClockedIn: checkIn != null && checkOut == null,
-      clockInTime: checkIn,
-      workingMinutes: minutes,
-    );
-  }
-
-  MonthlySummary _summary(
-    Object? data,
-    List<LeaveBalance> balances,
-    DashboardAttendance today,
-  ) {
-    final map = _asMap(data);
-    final present = _integer(map, const [
-      'present',
-      'presentDays',
-      'totalPresent',
-    ]);
-    final working = _integer(map, const ['workingDays', 'totalWorkingDays']);
-    final percentage = _integer(
-      map,
-      const ['attendancePercentage', 'percentage', 'attendanceRate'],
-      fallback: working == 0
-          ? (today.clockInTime == null ? 0 : 100)
-          : ((present / working) * 100).round(),
-    );
-    final overtime = _number(map, const [
-      'overtimeHours',
-      'totalOvertimeHours',
-      'overtime',
-    ]);
-    return MonthlySummary(
-      attendancePercentage: percentage.clamp(0, 100),
-      lateCount: _integer(map, const ['late', 'lateCount', 'totalLate']),
-      overtimeHours: overtime,
-      remainingLeave: balances.fold<int>(
-        0,
-        (sum, item) => sum + (item.total - item.used).clamp(0, item.total),
-      ),
-    );
-  }
-
   List<Announcement> _announcements(Object? data) {
     final items = _asList(data, const ['items', 'notifications']);
     return items
+        .where((item) {
+          final type = _text(item, const ['category', 'type'])?.toUpperCase();
+          return type?.contains('ANNOUNCEMENT') == true;
+        })
         .take(3)
         .map((item) {
           final created = _date(item, const ['createdAt', 'created_at']);
@@ -216,6 +151,22 @@ class DioDashboardRemoteDataSource implements DashboardRemoteDataSource {
         })
         .toList(growable: false);
   }
+
+  int _unreadCount(Object? data) {
+    final direct = _asMap(data);
+    final explicit = direct['unreadCount'];
+    if (explicit is num) return explicit.round();
+    return _asList(
+      data,
+      const ['items', 'notifications'],
+    ).where((item) => item['isRead'] == false || item['readAt'] == null).length;
+  }
+}
+
+class _SectionResponse {
+  const _SectionResponse({this.data, this.error});
+  final Object? data;
+  final String? error;
 }
 
 Map<String, dynamic> _asMap(Object? data) {
@@ -254,16 +205,6 @@ int _integer(Map<dynamic, dynamic> map, List<String> keys, {int fallback = 0}) {
     if (parsed != null) return parsed;
   }
   return fallback;
-}
-
-num _number(Map<dynamic, dynamic> map, List<String> keys) {
-  for (final key in keys) {
-    final value = map[key];
-    if (value is num) return value;
-    final parsed = num.tryParse('$value');
-    if (parsed != null) return parsed;
-  }
-  return 0;
 }
 
 DateTime? _date(Map<dynamic, dynamic> map, List<String> keys) {

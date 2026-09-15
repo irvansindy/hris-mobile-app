@@ -51,7 +51,8 @@ void main() {
       await remote.logoutStarted.future;
       expect(await storage.readSession(), isNull);
       expect(await storage.readAccessToken(), isNull);
-      expect(remote.logoutHeaders?['Authorization'], 'Bearer token-A');
+      expect(remote.logoutHeaders, isEmpty);
+      expect(remote.logoutRefreshToken, 'refresh-A');
       await controller.login(email: 'B', password: 'fixture');
       remote.logoutGate!.completeError(StateError('offline'));
       await logout;
@@ -113,6 +114,7 @@ class _Remote implements AuthRemoteDataSource {
   final meStarted = Completer<void>();
   final logoutStarted = Completer<void>();
   Map<String, String>? logoutHeaders;
+  String? logoutRefreshToken;
   String? _nextMeId;
 
   @override
@@ -152,6 +154,7 @@ class _Remote implements AuthRemoteDataSource {
     Map<String, String>? headers,
   }) async {
     logoutHeaders = headers;
+    logoutRefreshToken = refreshToken;
     if (!logoutStarted.isCompleted) logoutStarted.complete();
     await logoutGate?.future;
   }
