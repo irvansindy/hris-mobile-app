@@ -70,11 +70,12 @@ class DioAuthRemoteDataSource implements AuthRemoteDataSource {
     required String newPassword,
   }) async {
     try {
-      await _dio.post<Map<String, dynamic>>(
+      final response = await _dio.post<Map<String, dynamic>>(
         '/auth/change-password',
         data: {'oldPassword': currentPassword, 'newPassword': newPassword},
         options: _options,
       );
+      _requireSuccess(response.data);
     } on DioException catch (error) {
       throw mapDioException(error);
     }
@@ -101,7 +102,7 @@ class DioAuthRemoteDataSource implements AuthRemoteDataSource {
     Map<String, String>? headers,
   }) async {
     try {
-      await _dio.post<Map<String, dynamic>>(
+      final response = await _dio.post<Map<String, dynamic>>(
         '/auth/logout',
         data: refreshToken == null ? null : {'refreshToken': refreshToken},
         options: Options(
@@ -110,8 +111,20 @@ class DioAuthRemoteDataSource implements AuthRemoteDataSource {
           followRedirects: false,
         ),
       );
+      _requireSuccess(response.data);
     } on DioException catch (error) {
       throw mapDioException(error);
+    }
+  }
+
+  void _requireSuccess(Map<String, dynamic>? data) {
+    final envelope = ApiEnvelope.fromJson(data ?? const {});
+    if (!envelope.success) {
+      throw FormatException(
+        envelope.message.isEmpty
+            ? 'Invalid API response data'
+            : envelope.message,
+      );
     }
   }
 }

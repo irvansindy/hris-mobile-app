@@ -240,6 +240,9 @@ class _Calendar implements CalendarRepository {
 }
 
 class _Notifications implements NotificationRepository {
+  @override
+  Future<void> delete(String id) async {}
+
   bool _read = false;
   @override
   Future<List<NotificationItem>> load({required int limit}) async => [

@@ -85,7 +85,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                 title: 'Absensi',
                 subtitle: 'Log kehadiran Anda',
                 trailing: FilledButton(
-                  onPressed: () => context.push('/requests/leave/new'),
+                  onPressed: () => context.push('/attendance/requests'),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(44, 44),
                     padding: const EdgeInsets.symmetric(horizontal: 15),
@@ -93,7 +93,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: const Text('Ajukan Cuti'),
+                  child: const Text('Pengajuan'),
                 ),
               ),
               const SizedBox(height: 18),
@@ -203,6 +203,10 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                 data: (page) => _HistoryContent(
                   page: page,
                   filter: _filter,
+                  onCorrection: (record) => context.push(
+                    '/attendance/requests?compose=true',
+                    extra: record,
+                  ),
                   onPrevious: page.page > 1
                       ? () => setState(() => _historyPage--)
                       : null,
@@ -677,12 +681,14 @@ class _HistoryContent extends StatelessWidget {
   const _HistoryContent({
     required this.page,
     required this.filter,
+    required this.onCorrection,
     required this.onPrevious,
     required this.onNext,
   });
 
   final AttendanceHistoryPage page;
   final AttendanceStatus filter;
+  final ValueChanged<AttendanceEntity> onCorrection;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
 
@@ -740,7 +746,7 @@ class _HistoryContent extends StatelessWidget {
           )
         else
           for (final item in items) ...[
-            _HistoryCard(record: item),
+            _HistoryCard(record: item, onCorrection: () => onCorrection(item)),
             const SizedBox(height: AppSpacing.sm),
           ],
         Row(
@@ -784,8 +790,9 @@ class _SummaryValue extends StatelessWidget {
 }
 
 class _HistoryCard extends StatelessWidget {
-  const _HistoryCard({required this.record});
+  const _HistoryCard({required this.record, required this.onCorrection});
   final AttendanceEntity record;
+  final VoidCallback onCorrection;
 
   @override
   Widget build(BuildContext context) {
@@ -800,26 +807,40 @@ class _HistoryCard extends StatelessWidget {
     final date = record.workDate ?? record.checkedInAt;
     return AppSurfaceCard(
       semanticLabel: '${status.$1}, ${_date(date)}',
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _date(date),
-                  style: Theme.of(context).textTheme.titleMedium,
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _date(date),
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      '${_time(record.checkedInAt)} sampai ${_time(record.checkedOutAt)}',
+                    ),
+                    if (record.officeTimezone case final timezone?)
+                      Text(
+                        timezone,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  '${_time(record.checkedInAt)} sampai ${_time(record.checkedOutAt)}',
-                ),
-                if (record.officeTimezone case final timezone?)
-                  Text(timezone, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
+              ),
+              AppStatusChip(label: status.$1, tone: status.$2),
+            ],
           ),
-          AppStatusChip(label: status.$1, tone: status.$2),
+          const SizedBox(height: AppSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: onCorrection,
+            icon: const Icon(Icons.edit_calendar_outlined),
+            label: const Text('Ajukan koreksi'),
+          ),
         ],
       ),
     );

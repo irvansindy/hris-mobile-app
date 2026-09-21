@@ -10,12 +10,14 @@ class DashboardRoute extends ConsumerWidget {
     super.key,
     required this.onOpenAttendance,
     required this.onOpenRequests,
+    this.requestShortcutLabel = 'Pengajuan',
     required this.onOpenCalendar,
     this.onOpenNotifications,
   });
 
   final VoidCallback onOpenAttendance;
   final VoidCallback onOpenRequests;
+  final String requestShortcutLabel;
   final VoidCallback onOpenCalendar;
   final VoidCallback? onOpenNotifications;
 
@@ -46,6 +48,7 @@ class DashboardRoute extends ConsumerWidget {
       attendance: attendance,
       onOpenAttendance: onOpenAttendance,
       onOpenRequests: onOpenRequests,
+      requestShortcutLabel: requestShortcutLabel,
       onOpenCalendar: onOpenCalendar,
       onOpenNotifications: onOpenNotifications,
       notificationUnreadCount: onOpenNotifications == null

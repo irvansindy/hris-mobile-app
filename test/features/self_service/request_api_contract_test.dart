@@ -38,6 +38,41 @@ void main() {
     expect(page.items.single.status, RequestStatus.pending);
   });
 
+  test('leave types and detail use documented read endpoints', () async {
+    final adapter = _RequestAdapter();
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+    final remote = DioRequestRemoteDataSource(dio, () => context);
+
+    final types = await remote.getLeaveTypes();
+    final detail = await remote.getLeaveDetail('leave-1');
+
+    expect(types.single.id, 'annual-1');
+    expect(types.single.requiresAttachment, isTrue);
+    expect(detail.id, 'leave-1');
+    expect(
+      adapter.requests.map((request) => '${request.method} ${request.path}'),
+      ['GET /leave/types', 'GET /leave/leave-1'],
+    );
+  });
+
+  test('permission history uses the self endpoint', () async {
+    final adapter = _RequestAdapter();
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+    final remote = DioRequestRemoteDataSource(dio, () => context);
+
+    final page = await remote.getPage(
+      kind: RequestKind.permission,
+      page: 1,
+      limit: 20,
+    );
+
+    expect(adapter.requests.single.path, '/permission-requests/my');
+    expect(adapter.requests.single.queryParameters, {'page': 1, 'limit': 20});
+    expect(page.items.single.kind, RequestKind.permission);
+  });
+
   test('leave submit sends documented fields and idempotency key', () async {
     final adapter = _RequestAdapter();
     final dio = Dio()..httpClientAdapter = adapter;
@@ -110,9 +145,62 @@ void main() {
       expect(adapter.requests.single.path, '/leave/leave-1/cancel');
     },
   );
+
+  test(
+    'permission cancellation uses the matching self-service route',
+    () async {
+      final adapter = _RequestAdapter();
+      final dio = Dio()..httpClientAdapter = adapter;
+      addTearDown(dio.close);
+      final remote = DioRequestRemoteDataSource(dio, () => context);
+
+      await remote.cancel(RequestKind.permission, 'permission-1');
+
+      expect(adapter.requests.single.method, 'PATCH');
+      expect(
+        adapter.requests.single.path,
+        '/permission-requests/permission-1/cancel',
+      );
+    },
+  );
+
+  test('rejects malformed list, foreign ownership, and unsafe IDs', () async {
+    final malformedDio = Dio()
+      ..httpClientAdapter = _RequestAdapter(defect: 'malformed-list');
+    addTearDown(malformedDio.close);
+    await expectLater(
+      DioRequestRemoteDataSource(
+        malformedDio,
+        () => context,
+      ).getPage(kind: RequestKind.leave, page: 1, limit: 20),
+      throwsFormatException,
+    );
+
+    final foreignDio = Dio()
+      ..httpClientAdapter = _RequestAdapter(defect: 'foreign-owner');
+    addTearDown(foreignDio.close);
+    await expectLater(
+      DioRequestRemoteDataSource(
+        foreignDio,
+        () => context,
+      ).getLeaveDetail('leave-1'),
+      throwsFormatException,
+    );
+
+    final safeIdDio = Dio();
+    addTearDown(safeIdDio.close);
+    final remote = DioRequestRemoteDataSource(safeIdDio, () => context);
+    await expectLater(
+      remote.getLeaveDetail('../another-employee'),
+      throwsFormatException,
+    );
+  });
 }
 
 class _RequestAdapter implements HttpClientAdapter {
+  _RequestAdapter({this.defect});
+
+  final String? defect;
   final List<RequestOptions> requests = [];
 
   @override
@@ -122,28 +210,48 @@ class _RequestAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     requests.add(options);
+    final isPermission = options.path.startsWith('/permission-requests');
     final request = {
-      'id': options.path == '/permission-requests'
-          ? 'permission-created'
-          : options.method == 'POST'
-          ? 'leave-created'
+      'id': options.method == 'POST'
+          ? isPermission
+                ? 'permission-created'
+                : 'leave-created'
+          : isPermission
+          ? 'permission-1'
           : 'leave-1',
-      'type': options.path == '/permission-requests'
-          ? 'WORK_FROM_HOME'
-          : 'Annual Leave',
+      'employeeId': defect == 'foreign-owner' ? 'employee-2' : 'employee-1',
+      'companyId': 'company-1',
+      'type': isPermission ? 'WORK_FROM_HOME' : 'Annual Leave',
       'startDate': '2026-09-21',
       'endDate': '2026-09-22',
       'reason': 'Keperluan keluarga',
       'status': options.path.endsWith('/cancel') ? 'CANCELLED' : 'PENDING',
       'createdAt': '2026-09-14T01:00:00.000Z',
     };
-    final body = options.method == 'GET' && options.path == '/leave'
+    final Object data = switch ((options.method, options.path)) {
+      ('GET', '/leave/types') => [
+        {
+          'id': 'annual-1',
+          'name': 'Cuti tahunan',
+          'code': 'ANNUAL',
+          'requiresAttachment': true,
+          'maxDays': 12,
+        },
+      ],
+      ('GET', '/leave') || ('GET', '/permission-requests/my') =>
+        defect == 'malformed-list' ? {'items': 'invalid'} : [request],
+      _ => request,
+    };
+    final body =
+        options.method == 'GET' &&
+            (options.path == '/leave' ||
+                options.path == '/permission-requests/my')
         ? {
             'success': true,
-            'data': [request],
+            'data': data,
             'meta': {'page': 2, 'limit': 20, 'total': 21, 'totalPages': 2},
           }
-        : {'success': true, 'data': request};
+        : {'success': true, 'data': data};
     return ResponseBody.fromString(
       jsonEncode(body),
       200,

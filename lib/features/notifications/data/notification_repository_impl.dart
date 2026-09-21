@@ -80,6 +80,18 @@ class DioNotificationRepository implements NotificationRepository {
     await _request('PUT', '/notifications/read-all');
   }
 
+  @override
+  Future<void> delete(String id) async {
+    final normalized = id.trim();
+    if (!RegExp(r'^[A-Za-z0-9_-]{1,128}$').hasMatch(normalized)) {
+      throw ArgumentError('ID notifikasi tidak valid.');
+    }
+    await _request(
+      'DELETE',
+      '/notifications/${Uri.encodeComponent(normalized)}',
+    );
+  }
+
   Future<ApiEnvelope> _request(
     String method,
     String path, {

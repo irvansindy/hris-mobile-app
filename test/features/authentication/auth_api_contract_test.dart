@@ -261,6 +261,41 @@ void main() {
     });
   });
 
+  test('change password and logout reject HTTP 200 success=false', () async {
+    final changeDio = Dio()
+      ..httpClientAdapter = _FixtureAdapter(
+        body: const {
+          'success': false,
+          'message': 'Password was not changed',
+          'data': null,
+        },
+      );
+    addTearDown(changeDio.close);
+    await expectLater(
+      DioAuthRemoteDataSource(changeDio).changePassword(
+        currentPassword: 'OldPassword1!',
+        newPassword: 'NewPassword2@',
+      ),
+      throwsFormatException,
+    );
+
+    final logoutDio = Dio()
+      ..httpClientAdapter = _FixtureAdapter(
+        body: const {
+          'success': false,
+          'message': 'Refresh token was not revoked',
+          'data': null,
+        },
+      );
+    addTearDown(logoutDio.close);
+    await expectLater(
+      DioAuthRemoteDataSource(
+        logoutDio,
+      ).logout(refreshToken: 'fixture-refresh'),
+      throwsFormatException,
+    );
+  });
+
   for (final raw in _fixture['errors'] as List) {
     final error = raw as Map<String, dynamic>;
     final body = error['body'] as Map<String, dynamic>;

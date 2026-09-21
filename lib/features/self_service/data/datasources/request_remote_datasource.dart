@@ -30,7 +30,7 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
     required int page,
     required int limit,
   }) async {
-    _requireContext();
+    final context = _requireContext();
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         kind == RequestKind.leave ? '/leave' : '/permission-requests/my',
@@ -39,12 +39,7 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
       final envelope = ApiEnvelope.fromJson(response.data ?? const {});
       if (!envelope.success) throw FormatException(envelope.message);
       final raw = envelope.data;
-      final items = raw is List
-          ? raw
-          : raw is Map<String, dynamic>
-          ? (raw['items'] ?? raw['requests'] ?? raw['leaves']) as List? ??
-                const []
-          : const [];
+      final items = _listData(raw, const ['items', 'requests', 'leaves']);
       final meta =
           envelope.meta ??
           (raw is Map<String, dynamic>
@@ -53,8 +48,7 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
           const {};
       return EmployeeRequestPage(
         items: items
-            .whereType<Map<String, dynamic>>()
-            .map((item) => _request(item, kind))
+            .map((item) => _request(item, kind, context))
             .toList(growable: false),
         page: _integer(meta['page'], page),
         totalPages: _integer(meta['totalPages'], page),
@@ -73,13 +67,8 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
       final envelope = ApiEnvelope.fromJson(response.data ?? const {});
       if (!envelope.success) throw FormatException(envelope.message);
       final raw = envelope.data;
-      final items = raw is List
-          ? raw
-          : raw is Map<String, dynamic>
-          ? (raw['items'] ?? raw['types']) as List? ?? const []
-          : const [];
+      final items = _listData(raw, const ['items', 'types']);
       return items
-          .whereType<Map<String, dynamic>>()
           .map((item) {
             return LeaveTypeOption(
               id: _requiredText(item, const ['id']),
@@ -97,10 +86,11 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
 
   @override
   Future<EmployeeRequest> getLeaveDetail(String id) async {
-    _requireContext();
+    final context = _requireContext();
+    _requireSafeId(id);
     try {
       final response = await _dio.get<Map<String, dynamic>>('/leave/$id');
-      return _request(_object(response), RequestKind.leave);
+      return _request(_object(response), RequestKind.leave, context);
     } on DioException catch (error) {
       throw mapDioException(error);
     }
@@ -108,7 +98,7 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
 
   @override
   Future<EmployeeRequest> submit(SubmitRequestCommand command) async {
-    _requireContext();
+    final context = _requireContext();
     if (command.startDate == null ||
         command.endDate == null ||
         command.reason?.trim().isEmpty != false) {
@@ -130,7 +120,7 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
             ? null
             : Options(headers: {'Idempotency-Key': command.idempotencyKey}),
       );
-      return _request(_object(response), command.kind);
+      return _request(_object(response), command.kind, context);
     } on DioException catch (error) {
       throw mapDioException(error);
     }
@@ -138,13 +128,14 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
 
   @override
   Future<EmployeeRequest> cancel(RequestKind kind, String id) async {
-    _requireContext();
+    final context = _requireContext();
+    _requireSafeId(id);
     try {
       final path = kind == RequestKind.leave
           ? '/leave/$id/cancel'
           : '/permission-requests/$id/cancel';
       final response = await _dio.patch<Map<String, dynamic>>(path);
-      return _request(_object(response), kind);
+      return _request(_object(response), kind, context);
     } on DioException catch (error) {
       throw mapDioException(error);
     }
@@ -168,7 +159,19 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
     return data;
   }
 
-  EmployeeRequest _request(Map<String, dynamic> json, RequestKind kind) {
+  EmployeeRequest _request(
+    Map<String, dynamic> json,
+    RequestKind kind,
+    RequestContext context,
+  ) {
+    final employeeId = _text(json, const ['employeeId', 'employee_id']);
+    final companyId = _text(json, const ['companyId', 'company_id']);
+    if ((employeeId != null && employeeId != context.employeeId) ||
+        (companyId != null && companyId != context.activeCompanyId)) {
+      throw const FormatException(
+        'Request response does not match the active employee or company',
+      );
+    }
     final typeObject = json['leaveType'];
     final type = typeObject is Map<String, dynamic>
         ? _text(typeObject, const ['name', 'code'])
@@ -191,6 +194,29 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
       rejectionReason: _text(json, const ['rejectionReason', 'notes']),
       attachment: _text(json, const ['attachment']),
     );
+  }
+
+  List<Map<String, dynamic>> _listData(Object? data, List<String> keys) {
+    Object? raw = data;
+    if (raw is Map<String, dynamic>) {
+      final map = raw;
+      for (final key in keys) {
+        if (map.containsKey(key)) {
+          raw = map[key];
+          break;
+        }
+      }
+    }
+    if (raw is! List || raw.any((item) => item is! Map<String, dynamic>)) {
+      throw const FormatException('Request list response is invalid');
+    }
+    return raw.cast<Map<String, dynamic>>();
+  }
+
+  void _requireSafeId(String id) {
+    if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(id)) {
+      throw const FormatException('Request ID is invalid');
+    }
   }
 }
 

@@ -14,11 +14,13 @@ class ProfileScreen extends ConsumerWidget {
     required this.onThemeToggle,
     required this.onSignOut,
     required this.isDarkMode,
+    this.onOpenAccountSecurity,
   });
 
   final VoidCallback onThemeToggle;
   final VoidCallback onSignOut;
   final bool isDarkMode;
+  final VoidCallback? onOpenAccountSecurity;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -195,6 +197,55 @@ class ProfileScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
+                if (onOpenAccountSecurity != null) ...[
+                  const SizedBox(height: 10),
+                  AppSurfaceCard(
+                    onTap: onOpenAccountSecurity,
+                    semanticLabel: 'Buka keamanan akun',
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 52),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              Icons.security_rounded,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Keamanan akun',
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Atur MFA dan sesi perangkat',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.chevron_right_rounded),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 _InfoGroup(
                   items: [

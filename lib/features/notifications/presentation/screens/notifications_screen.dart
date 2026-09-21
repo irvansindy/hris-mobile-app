@@ -163,6 +163,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   _NotificationCard(
                     item: item,
                     today: ref.read(clockProvider)(),
+                    onDelete: data?.busy == true
+                        ? null
+                        : () => _confirmDelete(context, controller, item),
                     onTap: data?.busy == true
                         ? null
                         : () async {
@@ -192,17 +195,52 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       ),
     );
   }
+
+  Future<void> _confirmDelete(
+    BuildContext context,
+    NotificationInboxController controller,
+    NotificationItem item,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      animationStyle: AppMotion.dialogStyleOf(context),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Hapus notifikasi?'),
+        content: Text(
+          'Notifikasi "${item.title}" akan dihapus dari akun Anda.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (!context.mounted || confirmed != true) return;
+    final deleted = await controller.delete(item.id);
+    if (!context.mounted || !deleted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Notifikasi dihapus.')));
+  }
 }
 
 class _NotificationCard extends StatelessWidget {
   const _NotificationCard({
     required this.item,
     required this.onTap,
+    required this.onDelete,
     required this.today,
   });
   final NotificationItem item;
   final DateTime today;
   final VoidCallback? onTap;
+  final VoidCallback? onDelete;
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -294,6 +332,17 @@ class _NotificationCard extends StatelessWidget {
                               ),
                             ),
                           ],
+                          const SizedBox(width: 4),
+                          IconButton(
+                            onPressed: onDelete,
+                            tooltip: 'Hapus notifikasi',
+                            constraints: const BoxConstraints(
+                              minWidth: 44,
+                              minHeight: 44,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.delete_outline_rounded),
+                          ),
                         ],
                       ),
                       if (item.message != null) ...[

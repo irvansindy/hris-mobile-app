@@ -13,6 +13,9 @@ import 'package:hrm_app/core/widgets/app_navigation.dart';
 import 'package:hrm_app/features/authentication/authentication_dependencies.dart';
 import 'package:hrm_app/features/authentication/domain/entities/auth_session.dart';
 import 'package:hrm_app/features/authentication/domain/repositories/auth_repository.dart';
+import 'package:hrm_app/features/approvals/approval_dependencies.dart';
+import 'package:hrm_app/features/approvals/domain/entities/workflow_approval.dart';
+import 'package:hrm_app/features/approvals/domain/repositories/approval_repository.dart';
 import 'package:hrm_app/features/dashboard/dashboard_dependencies.dart';
 import 'package:hrm_app/features/dashboard/data/datasources/dashboard_local_datasource.dart';
 import 'package:hrm_app/features/dashboard/data/repositories/dashboard_repository_impl.dart';
@@ -42,6 +45,7 @@ void main() {
         sharedPreferencesProvider.overrideWithValue(preferences),
         appConfigProvider.overrideWithValue(config),
         authRepositoryProvider.overrideWithValue(repository),
+        approvalRepositoryProvider.overrideWithValue(_Approvals()),
         notificationRepositoryProvider.overrideWithValue(_Notifications()),
         dashboardRepositoryProvider.overrideWith((ref) {
           final session = ref.watch(featureSessionProvider);
@@ -234,6 +238,44 @@ void main() {
     },
   );
 
+  testWidgets('manager opens Approval Center while employee route is guarded', (
+    tester,
+  ) async {
+    final managerContainer = await containerFor(
+      _AuthRepository(restoredSession: _managerSession()),
+    );
+    addTearDown(managerContainer.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: managerContainer,
+        child: const HrmsApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Approval'), findsOneWidget);
+    await tester.tap(find.text('Approval'));
+    await tester.pumpAndSettle();
+    expect(find.text('Approval Center'), findsOneWidget);
+    expect(find.text('Tidak ada approval menunggu'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    final employeeContainer = await containerFor(
+      _AuthRepository(restoredSession: _employeeSession('employee-a')),
+    );
+    addTearDown(employeeContainer.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: employeeContainer,
+        child: const HrmsApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    employeeContainer.read(appRouterProvider).go('/approvals');
+    await tester.pumpAndSettle();
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.text('Approval Center'), findsNothing);
+  });
+
   testWidgets(
     'notification badge opens inbox outside shell, reads item and back restores Home',
     (tester) async {
@@ -268,6 +310,9 @@ void main() {
 }
 
 class _Notifications implements NotificationRepository {
+  @override
+  Future<void> delete(String id) async {}
+
   int count = 1;
   @override
   Future<List<NotificationItem>> load({required int limit}) async => [
@@ -297,6 +342,54 @@ AuthSession _employeeSession(String id) => AuthSession(
   companyId: 'company-a',
   userName: id == 'employee@example.test' ? 'Employee Nyata' : id,
 );
+
+AuthSession _managerSession() => const AuthSession(
+  accessToken: 'fixture-manager-a',
+  userId: 'manager-a',
+  employeeId: 'manager-a',
+  companyId: 'company-a',
+  userName: 'Manager A',
+  permissions: ['workflow:approve'],
+);
+
+class _Approvals implements ApprovalRepository {
+  @override
+  Future<WorkflowApprovalPage> getQueue({required int page, int limit = 20}) =>
+      Future.value(
+        WorkflowApprovalPage(
+          items: const [],
+          page: page,
+          totalPages: 1,
+          total: 0,
+        ),
+      );
+
+  @override
+  Future<void> applyAction({
+    required String instanceId,
+    required WorkflowApprovalAction action,
+    String? comment,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WorkflowBulkResult> applyBulkAction({
+    required List<String> instanceIds,
+    required WorkflowApprovalAction action,
+    String? comment,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<List<ApprovalDelegation>> getDelegations() async => const [];
+
+  @override
+  Future<ApprovalDelegation> createDelegation(
+    CreateApprovalDelegation command,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<ApprovalDelegation> revokeDelegation(String id) =>
+      throw UnimplementedError();
+}
 
 class _AuthRepository implements AuthRepository {
   _AuthRepository({this.restoredSession});

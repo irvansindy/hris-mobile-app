@@ -5,4 +5,5 @@ abstract interface class NotificationRepository {
   Future<int> unreadCount();
   Future<void> read(List<String> ids);
   Future<void> readAll();
+  Future<void> delete(String id);
 }

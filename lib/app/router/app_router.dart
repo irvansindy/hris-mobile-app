@@ -8,15 +8,22 @@ import 'package:hrm_app/app/router/notification_route.dart';
 import 'package:hrm_app/app/shell/main_shell.dart';
 import 'package:hrm_app/app/shell/quick_action_capabilities.dart';
 import 'package:hrm_app/core/network/request_context.dart';
+import 'package:hrm_app/core/models/attendance_correction_seed.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/widgets/app_state_view.dart';
 import 'package:hrm_app/features/attendance/presentation/screens/attendance_screen.dart';
+import 'package:hrm_app/features/attendance/domain/entities/attendance_entity.dart';
+import 'package:hrm_app/features/attendance_requests/presentation/screens/attendance_requests_screen.dart';
+import 'package:hrm_app/features/approvals/presentation/screens/approval_center_screen.dart';
+import 'package:hrm_app/features/approvals/presentation/screens/approval_delegations_screen.dart';
+import 'package:hrm_app/features/account_security/presentation/screens/account_security_screen.dart';
 import 'package:hrm_app/features/authentication/authentication_providers.dart';
 import 'package:hrm_app/features/authentication/presentation/screens/change_password_screen.dart';
 import 'package:hrm_app/features/authentication/presentation/screens/employee_access_unavailable_screen.dart';
 import 'package:hrm_app/features/authentication/presentation/screens/login_screen.dart';
 import 'package:hrm_app/features/authentication/presentation/screens/session_splash_screen.dart';
 import 'package:hrm_app/features/calendar/presentation/screens/calendar_screen.dart';
+import 'package:hrm_app/features/ess/presentation/screens/ess_screen.dart';
 import 'package:hrm_app/features/profile/presentation/screens/profile_screen.dart';
 import 'package:hrm_app/features/self_service/presentation/screens/requests_screen.dart';
 import 'package:hrm_app/features/self_service/presentation/screens/request_form_screen.dart';
@@ -87,7 +94,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   controller: scrollControllers[0],
                   child: DashboardRoute(
                     onOpenAttendance: () => context.go('/attendance'),
-                    onOpenRequests: () => context.push('/requests'),
+                    onOpenRequests: () {
+                      final canApprove =
+                          ref
+                              .read(requestContextProvider)
+                              ?.permissions
+                              .contains('workflow:approve') ==
+                          true;
+                      context.push(canApprove ? '/approvals' : '/requests');
+                    },
+                    requestShortcutLabel:
+                        ref
+                                .read(requestContextProvider)
+                                ?.permissions
+                                .contains('workflow:approve') ==
+                            true
+                        ? 'Approval'
+                        : 'Pengajuan',
                     onOpenCalendar: () => context.go('/calendar'),
                     onOpenNotifications: () => context.push('/notifications'),
                   ),
@@ -121,7 +144,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/profile',
-                builder: (_, _) => ShellBranchScrollController(
+                builder: (context, _) => ShellBranchScrollController(
                   controller: scrollControllers[3],
                   child: ProfileScreen(
                     onThemeToggle: () =>
@@ -130,6 +153,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                         ref.read(authControllerProvider.notifier).logout(),
                     isDarkMode:
                         ref.read(themeControllerProvider) == ThemeMode.dark,
+                    onOpenAccountSecurity: () =>
+                        context.push('/profile/security'),
                   ),
                 ),
               ),
@@ -139,8 +164,61 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/requests', builder: (_, _) => const RequestsScreen()),
       GoRoute(
+        path: '/ess',
+        builder: (_, state) {
+          final area = switch (state.uri.queryParameters['area']) {
+            'ewa' => EssArea.ewa,
+            'activity' => EssArea.activity,
+            'travel' => EssArea.travel,
+            _ => EssArea.loan,
+          };
+          return EssScreen(initialArea: area);
+        },
+      ),
+      GoRoute(
+        path: '/attendance/requests',
+        builder: (_, state) {
+          final overtime = state.uri.queryParameters['tab'] == 'overtime';
+          final attendance = state.extra is AttendanceEntity
+              ? state.extra! as AttendanceEntity
+              : null;
+          return AttendanceRequestsScreen(
+            initialTab: overtime
+                ? AttendanceRequestTab.overtime
+                : AttendanceRequestTab.correction,
+            openComposer: state.uri.queryParameters['compose'] == 'true',
+            initialAttendance: attendance == null
+                ? null
+                : AttendanceCorrectionSeed(
+                    attendanceId: attendance.id,
+                    date:
+                        attendance.workDate ??
+                        attendance.checkedInAt ??
+                        DateTime.now(),
+                    checkedInAt: attendance.checkedInAt,
+                    checkedOutAt: attendance.checkedOutAt,
+                  ),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/approvals',
+        builder: (_, _) => const ApprovalCenterScreen(),
+      ),
+      GoRoute(
+        path: '/approvals/delegations',
+        builder: (_, _) => const ApprovalDelegationsScreen(),
+      ),
+      GoRoute(
         path: '/notifications',
         builder: (_, _) => const NotificationRoute(),
+      ),
+      GoRoute(
+        path: '/profile/security',
+        builder: (_, _) => AccountSecurityScreen(
+          onCurrentSessionRevoked: () =>
+              ref.read(authControllerProvider.notifier).logout(),
+        ),
       ),
       GoRoute(
         path: '/requests/leave/new',
@@ -202,6 +280,11 @@ String? _redirect(Ref ref, GoRouterState state) {
     return path == '/employee-access-unavailable'
         ? null
         : '/employee-access-unavailable';
+  }
+
+  if (path.startsWith('/approvals') &&
+      !session.permissions.contains('workflow:approve')) {
+    return '/home';
   }
 
   if (_authOnlyPath(path)) {

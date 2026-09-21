@@ -26,6 +26,13 @@ final quickActionCapabilitiesProvider = Provider<List<QuickActionCapability>>((
 ) {
   return const [
     QuickActionCapability(
+      label: 'Approval Center',
+      icon: Icons.fact_check_outlined,
+      endpointAvailable: true,
+      route: '/approvals',
+      requiredPermission: 'workflow:approve',
+    ),
+    QuickActionCapability(
       label: 'Ajukan cuti',
       icon: Icons.beach_access_outlined,
       endpointAvailable: true,
@@ -35,8 +42,9 @@ final quickActionCapabilitiesProvider = Provider<List<QuickActionCapability>>((
     QuickActionCapability(
       label: 'Klaim lembur',
       icon: Icons.more_time_rounded,
-      endpointAvailable: false,
-      route: null,
+      endpointAvailable: true,
+      route: '/attendance/requests?tab=overtime&compose=true',
+      requiredPermission: 'attendance:create',
     ),
     QuickActionCapability(
       label: 'Reimbursement',

@@ -45,5 +45,6 @@ app.*.map.json
 /android/app/release
 
 .env
+tmp/hris-mobile-smoke.json
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist

@@ -34,6 +34,7 @@ class HomeScreen extends ConsumerStatefulWidget {
     ),
     required this.onOpenAttendance,
     this.onOpenRequests,
+    this.requestShortcutLabel = 'Pengajuan',
     this.onOpenCalendar,
     this.onOpenNotifications,
     this.notificationUnreadCount,
@@ -43,6 +44,7 @@ class HomeScreen extends ConsumerStatefulWidget {
   final AsyncValue<HomeAttendanceData> attendance;
   final VoidCallback onOpenAttendance;
   final VoidCallback? onOpenRequests;
+  final String requestShortcutLabel;
   final VoidCallback? onOpenCalendar;
   final VoidCallback? onOpenNotifications;
   final int? notificationUnreadCount;
@@ -151,8 +153,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         if (widget.onOpenRequests != null)
                           Expanded(
                             child: _ShortcutCard(
-                              label: 'Pengajuan',
-                              icon: Icons.description_outlined,
+                              label: widget.requestShortcutLabel,
+                              icon: widget.requestShortcutLabel == 'Approval'
+                                  ? Icons.fact_check_outlined
+                                  : Icons.description_outlined,
                               onTap: widget.onOpenRequests!,
                             ),
                           ),

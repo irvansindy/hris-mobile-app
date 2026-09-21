@@ -225,6 +225,9 @@ class _Calendar implements CalendarRepository {
 
 class _Notifications implements NotificationRepository {
   @override
+  Future<void> delete(String id) async {}
+
+  @override
   Future<List<NotificationItem>> load({required int limit}) async => const [
     NotificationItem(
       id: 'fixture-n',

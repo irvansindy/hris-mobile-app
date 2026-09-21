@@ -60,7 +60,10 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
               latitude: 0,
               longitude: 0,
             ).toEntity()
-          : AttendanceDto.fromJson(today).toEntity();
+          : _attendanceDto(
+              today,
+              expectedEmployeeId: context.employeeId!,
+            ).toEntity();
       return AttendanceToday(record: record, context: policy);
     } on DioException catch (error) {
       throw mapDioException(error);
@@ -73,7 +76,7 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
     required int page,
     required int limit,
   }) async {
-    _requireContext();
+    final context = _requireContext();
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         '/attendance/me',
@@ -82,12 +85,7 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
       final envelope = ApiEnvelope.fromJson(response.data ?? const {});
       if (!envelope.success) throw FormatException(envelope.message);
       final raw = envelope.data;
-      final items = raw is List
-          ? raw
-          : raw is Map<String, dynamic>
-          ? (raw['items'] ?? raw['records'] ?? raw['attendances']) as List? ??
-                const []
-          : const [];
+      final items = _attendanceList(raw);
       final meta =
           envelope.meta ??
           (raw is Map<String, dynamic>
@@ -96,8 +94,10 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
           const {};
       return AttendanceHistoryPage(
         items: items
-            .whereType<Map<String, dynamic>>()
-            .map(AttendanceDto.fromJson)
+            .map(
+              (item) =>
+                  _attendanceDto(item, expectedEmployeeId: context.employeeId!),
+            )
             .map((item) => item.toEntity())
             .toList(growable: false),
         page: _integer(meta['page'], page),
@@ -141,7 +141,9 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
         response.data ?? const {},
       ).requireObjectData();
       final today = _todayAttendance(data);
-      if (today != null) return AttendanceDto.fromJson(today);
+      if (today != null) {
+        return _attendanceDto(today, expectedEmployeeId: context.employeeId!);
+      }
       return AttendanceDto(
         id: '',
         employeeId: context.employeeId!,
@@ -157,7 +159,7 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
 
   @override
   Future<AttendanceDto> clockIn(AttendanceCommand command) async {
-    _requireContext();
+    final context = _requireContext();
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         '/attendance/me/check-in',
@@ -176,10 +178,12 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
         },
         options: Options(headers: {'Idempotency-Key': command.idempotencyKey}),
       );
-      return AttendanceDto.fromJson(
+      return _attendanceDto(
         _attendanceObject(
           ApiEnvelope.fromJson(response.data ?? const {}).requireObjectData(),
         ),
+        expectedEmployeeId: context.employeeId!,
+        requireCheckIn: true,
       );
     } on DioException catch (error) {
       throw mapDioException(error);
@@ -188,7 +192,7 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
 
   @override
   Future<AttendanceDto> clockOut(AttendanceCommand command) async {
-    _requireContext();
+    final context = _requireContext();
     try {
       final response = await _dio.patch<Map<String, dynamic>>(
         '/attendance/me/check-out',
@@ -200,10 +204,13 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
         },
         options: Options(headers: {'Idempotency-Key': command.idempotencyKey}),
       );
-      return AttendanceDto.fromJson(
+      return _attendanceDto(
         _attendanceObject(
           ApiEnvelope.fromJson(response.data ?? const {}).requireObjectData(),
         ),
+        expectedEmployeeId: context.employeeId!,
+        requireCheckIn: true,
+        requireCheckOut: true,
       );
     } on DioException catch (error) {
       throw mapDioException(error);
@@ -234,6 +241,42 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
   Map<String, dynamic> _attendanceObject(Map<String, dynamic> data) {
     final nested = data['attendance'];
     return nested is Map<String, dynamic> ? nested : data;
+  }
+
+  List<Map<String, dynamic>> _attendanceList(Object? data) {
+    Object? raw = data;
+    if (raw is Map<String, dynamic>) {
+      final map = raw;
+      for (final key in const ['items', 'records', 'attendances']) {
+        if (map.containsKey(key)) {
+          raw = map[key];
+          break;
+        }
+      }
+    }
+    if (raw is! List || raw.any((item) => item is! Map<String, dynamic>)) {
+      throw const FormatException('Attendance history response is invalid');
+    }
+    return raw.cast<Map<String, dynamic>>();
+  }
+
+  AttendanceDto _attendanceDto(
+    Map<String, dynamic> data, {
+    required String expectedEmployeeId,
+    bool requireCheckIn = false,
+    bool requireCheckOut = false,
+  }) {
+    final dto = AttendanceDto.fromJson(data);
+    if (dto.id.trim().isEmpty || dto.employeeId != expectedEmployeeId) {
+      throw const FormatException(
+        'Attendance response does not match the active employee',
+      );
+    }
+    if ((requireCheckIn && dto.checkedInAt == null) ||
+        (requireCheckOut && dto.checkedOutAt == null)) {
+      throw const FormatException('Attendance response is incomplete');
+    }
+    return dto;
   }
 
   Map<String, dynamic> _deviceGps(AttendanceCommand command) => {

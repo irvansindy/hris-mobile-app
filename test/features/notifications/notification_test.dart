@@ -85,16 +85,19 @@ void main() {
       expect(await repo.unreadCount(), 3);
       await repo.read(['n1']);
       await repo.readAll();
+      await repo.delete('n1');
       expect(adapter.requests.map((r) => '${r.method} ${r.path}'), [
         'GET /notifications',
         'GET /notifications/unread-count',
         'PUT /notifications/read',
         'PUT /notifications/read-all',
+        'DELETE /notifications/n1',
       ]);
       expect(adapter.requests[2].data, {
         'ids': ['n1'],
       });
       expect(adapter.requests[3].data, isNull);
+      expect(adapter.requests[4].data, isNull);
     },
   );
   for (final defect in ['user', 'company', 'schema', 'failure', 'count']) {
@@ -182,6 +185,46 @@ void main() {
       isTrue,
     );
   });
+  test(
+    'failed optimistic delete restores item and successful delete removes it',
+    () async {
+      final repo = _Repo()..failDelete = true;
+      final container = ProviderContainer(
+        overrides: [notificationRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(notificationInboxProvider, (_, _) {});
+      addTearDown(sub.close);
+      await container.read(notificationInboxProvider.future);
+
+      final failed = container
+          .read(notificationInboxProvider.notifier)
+          .delete('n1');
+      expect(
+        container.read(notificationInboxProvider).requireValue.items,
+        isEmpty,
+      );
+      expect(await failed, isFalse);
+      expect(
+        container.read(notificationInboxProvider).requireValue.items.single.id,
+        'n1',
+      );
+      expect(
+        container.read(notificationInboxProvider).requireValue.actionError,
+        contains('dipulihkan'),
+      );
+
+      repo.failDelete = false;
+      expect(
+        await container.read(notificationInboxProvider.notifier).delete('n1'),
+        isTrue,
+      );
+      expect(
+        container.read(notificationInboxProvider).requireValue.items,
+        isEmpty,
+      );
+    },
+  );
   test('late read result cannot contaminate the next account', () async {
     final first = _Repo()..pendingRead = Completer<void>();
     final second = _Repo();
@@ -277,6 +320,7 @@ class _Repo implements NotificationRepository {
   bool failLoad = false;
   final loadLimits = <int>[];
   bool failRead = false;
+  bool failDelete = false;
   int count = 1;
   int readAllCalls = 0;
   Completer<void>? pendingRead;
@@ -313,6 +357,12 @@ class _Repo implements NotificationRepository {
   @override
   Future<void> readAll() async {
     readAllCalls++;
+    count = 0;
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    if (failDelete) throw StateError('offline');
     count = 0;
   }
 }

@@ -124,4 +124,46 @@ class NotificationInboxController
       return false;
     }
   }
+
+  Future<bool> delete(String id) async {
+    final session = _session;
+    final previous = state.asData?.value;
+    if (!session.isCurrent || previous == null || previous.busy) return false;
+    if (!previous.items.any((item) => item.id == id)) return false;
+    final repo = ref.read(notificationRepositoryProvider);
+    final generation = ++_generation;
+    final optimisticItems = previous.items
+        .where((item) => item.id != id)
+        .toList(growable: false);
+    state = AsyncData(
+      NotificationInbox(
+        items: optimisticItems,
+        limit: previous.limit,
+        busy: true,
+      ),
+    );
+    try {
+      await repo.delete(id);
+      if (!session.isCurrent || generation != _generation) return false;
+      state = AsyncData(
+        NotificationInbox(items: optimisticItems, limit: previous.limit),
+      );
+      ref.invalidate(notificationUnreadCountProvider);
+      return true;
+    } catch (error) {
+      if (session.isCurrent && generation == _generation) {
+        state = AsyncData(
+          NotificationInbox(
+            items: previous.items,
+            limit: previous.limit,
+            actionError: error is ApiException
+                ? error.message
+                : 'Notifikasi gagal dihapus. Daftar telah dipulihkan.',
+          ),
+        );
+        ref.invalidate(notificationUnreadCountProvider);
+      }
+      return false;
+    }
+  }
 }

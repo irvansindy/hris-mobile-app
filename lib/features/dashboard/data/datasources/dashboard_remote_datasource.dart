@@ -66,9 +66,16 @@ class DioDashboardRemoteDataSource implements DashboardRemoteDataSource {
         path,
         queryParameters: query,
       );
-      return _SectionResponse(
-        data: ApiEnvelope.fromJson(response.data ?? const {}).data,
-      );
+      final envelope = ApiEnvelope.fromJson(response.data ?? const {});
+      if (!envelope.success ||
+          (envelope.data is! List && envelope.data is! Map<String, dynamic>)) {
+        throw FormatException(
+          envelope.message.isEmpty
+              ? 'Format respons server tidak valid.'
+              : envelope.message,
+        );
+      }
+      return _SectionResponse(data: envelope.data);
     } on DioException catch (error) {
       return _SectionResponse(error: mapDioException(error).message);
     } on FormatException {

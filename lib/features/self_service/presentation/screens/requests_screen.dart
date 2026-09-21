@@ -33,6 +33,12 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
             ?.permissions
             .contains('leave:create') ==
         true;
+    final canCreateOvertime =
+        ref
+            .watch(requestContextProvider)
+            ?.permissions
+            .contains('attendance:create') ==
+        true;
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(requestPageProvider(query).future),
@@ -65,27 +71,20 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
               data: (page) => Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _RequestActionCard(
-                          primary: true,
-                          icon: Icons.add_rounded,
-                          title: 'Buat Pengajuan',
-                          subtitle: canCreateLeave ? 'Cuti atau izin' : 'Izin',
-                          onTap: () => _showCreateMenu(canCreateLeave),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _RequestActionCard(
-                          icon: Icons.schedule_rounded,
-                          title: 'Menunggu',
-                          subtitle:
-                              '${page.items.where((item) => item.status == RequestStatus.pending).length} di halaman ini',
-                        ),
-                      ),
-                    ],
+                  _RequestSummaryActions(
+                    canCreateLeave: canCreateLeave,
+                    pendingCount: page.items
+                        .where((item) => item.status == RequestStatus.pending)
+                        .length,
+                    onCreate: () =>
+                        _showCreateMenu(canCreateLeave, canCreateOvertime),
+                  ),
+                  const SizedBox(height: 10),
+                  _RequestActionCard(
+                    icon: Icons.apps_rounded,
+                    title: 'Layanan Employee',
+                    subtitle: 'Pinjaman, EWA, aktivitas, perjalanan, dan klaim',
+                    onTap: () => context.push('/ess'),
                   ),
                   const SizedBox(height: 18),
                   AppSegmentedControl<RequestKind>(
@@ -150,7 +149,7 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
         ),
       );
 
-  Future<void> _showCreateMenu(bool canCreateLeave) =>
+  Future<void> _showCreateMenu(bool canCreateLeave, bool canCreateOvertime) =>
       showModalBottomSheet<void>(
         context: context,
         useSafeArea: true,
@@ -184,6 +183,25 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
                   context.push('/requests/permission/new');
                 },
               ),
+              ListTile(
+                leading: const AppIconTile(icon: Icons.edit_calendar_outlined),
+                title: const Text('Koreksi absensi'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  context.push('/attendance/requests?compose=true');
+                },
+              ),
+              if (canCreateOvertime)
+                ListTile(
+                  leading: const AppIconTile(icon: Icons.more_time_rounded),
+                  title: const Text('Lembur'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    context.push(
+                      '/attendance/requests?tab=overtime&compose=true',
+                    );
+                  },
+                ),
             ],
           ),
         ),
@@ -249,6 +267,54 @@ class _RequestActionCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _RequestSummaryActions extends StatelessWidget {
+  const _RequestSummaryActions({
+    required this.canCreateLeave,
+    required this.pendingCount,
+    required this.onCreate,
+  });
+
+  final bool canCreateLeave;
+  final int pendingCount;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    final create = _RequestActionCard(
+      primary: true,
+      icon: Icons.add_rounded,
+      title: 'Buat Pengajuan',
+      subtitle: canCreateLeave ? 'Cuti atau izin' : 'Izin',
+      onTap: onCreate,
+    );
+    final pending = _RequestActionCard(
+      icon: Icons.schedule_rounded,
+      title: 'Menunggu',
+      subtitle: '$pendingCount di halaman ini',
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stack =
+            constraints.maxWidth < 340 ||
+            MediaQuery.textScalerOf(context).scale(1) > 1.35;
+        if (stack) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [create, const SizedBox(height: 10), pending],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: create),
+            const SizedBox(width: 10),
+            Expanded(child: pending),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _RequestList extends StatelessWidget {

@@ -168,12 +168,45 @@ void main() {
       expect(result.checkedOutAt, isNotNull);
     },
   );
+
+  test('rejects failed, malformed, and foreign attendance responses', () async {
+    final failedDio = Dio()
+      ..httpClientAdapter = _AttendanceAdapter(defect: 'failure');
+    addTearDown(failedDio.close);
+    await expectLater(
+      DioAttendanceRemoteDataSource(failedDio, () => context).getTodayState(),
+      throwsFormatException,
+    );
+
+    final malformedDio = Dio()
+      ..httpClientAdapter = _AttendanceAdapter(defect: 'malformed-history');
+    addTearDown(malformedDio.close);
+    await expectLater(
+      DioAttendanceRemoteDataSource(
+        malformedDio,
+        () => context,
+      ).getHistory(month: '2026-09', page: 1, limit: 20),
+      throwsFormatException,
+    );
+
+    final foreignDio = Dio()
+      ..httpClientAdapter = _AttendanceAdapter(
+        activeRecord: true,
+        defect: 'foreign-employee',
+      );
+    addTearDown(foreignDio.close);
+    await expectLater(
+      DioAttendanceRemoteDataSource(foreignDio, () => context).getTodayState(),
+      throwsFormatException,
+    );
+  });
 }
 
 class _AttendanceAdapter implements HttpClientAdapter {
-  _AttendanceAdapter({this.activeRecord = false});
+  _AttendanceAdapter({this.activeRecord = false, this.defect});
 
   final bool activeRecord;
+  final String? defect;
   final List<RequestOptions> requests = [];
 
   @override
@@ -258,6 +291,13 @@ class _AttendanceAdapter implements HttpClientAdapter {
       },
       _ => {'success': false, 'message': 'Unexpected request'},
     };
+    if (defect == 'failure') body['success'] = false;
+    if (defect == 'malformed-history' && options.path == '/attendance/me') {
+      body['data'] = [false];
+    }
+    if (defect == 'foreign-employee') {
+      _replaceEmployee(body['data'], 'another-employee');
+    }
     return ResponseBody.fromString(
       jsonEncode(body),
       200,
@@ -269,4 +309,18 @@ class _AttendanceAdapter implements HttpClientAdapter {
 
   @override
   void close({bool force = false}) {}
+}
+
+void _replaceEmployee(Object? value, String employeeId) {
+  if (value is List) {
+    for (final item in value) {
+      _replaceEmployee(item, employeeId);
+    }
+    return;
+  }
+  if (value is! Map<String, dynamic>) return;
+  if (value.containsKey('employeeId')) value['employeeId'] = employeeId;
+  for (final nested in value.values) {
+    _replaceEmployee(nested, employeeId);
+  }
 }
