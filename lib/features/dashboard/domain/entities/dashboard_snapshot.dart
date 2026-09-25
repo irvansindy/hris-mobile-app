@@ -59,11 +59,13 @@ class DashboardEmployee {
     required this.name,
     required this.initials,
     required this.avatarColorIndex,
+    this.role,
   });
 
   final String name;
   final String initials;
   final int avatarColorIndex;
+  final String? role;
 }
 
 class LeaveBalance {
@@ -72,12 +74,16 @@ class LeaveBalance {
     required this.total,
     required this.used,
     required this.colorIndex,
+    this.shortLabel,
+    this.note,
   });
 
   final String type;
   final int total;
   final int used;
   final int colorIndex;
+  final String? shortLabel;
+  final String? note;
 }
 
 class Announcement {

@@ -173,8 +173,6 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
               'selfieImage':
                   'data:${selfie.mimeType};base64,${base64Encode(selfie.bytes)}',
             },
-          if (command.selfie != null)
-            'liveness': {'isLiveCapture': true, 'clientSource': 'camera'},
         },
         options: Options(headers: {'Idempotency-Key': command.idempotencyKey}),
       );

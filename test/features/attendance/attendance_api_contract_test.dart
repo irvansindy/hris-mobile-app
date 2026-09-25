@@ -126,10 +126,7 @@ void main() {
       expect(body['faceRecognition'], {
         'selfieImage': 'data:image/jpeg;base64,AQID',
       });
-      expect(body['liveness'], {
-        'isLiveCapture': true,
-        'clientSource': 'camera',
-      });
+      expect(body, isNot(contains('liveness')));
     },
   );
 

@@ -8,6 +8,7 @@ import 'package:hrm_app/features/dashboard/dashboard_dependencies.dart';
 import 'package:hrm_app/features/dashboard/domain/entities/dashboard_snapshot.dart';
 import 'package:hrm_app/features/dashboard/domain/repositories/dashboard_repository.dart';
 import 'package:hrm_app/features/dashboard/presentation/screens/home_screen.dart';
+import 'package:hrm_app/features/dashboard/presentation/widgets/leave_balance_ring.dart';
 
 void main() {
   Future<void> pumpHome(
@@ -15,22 +16,25 @@ void main() {
     bool dark = false,
     VoidCallback? onOpenNotifications,
     int? unreadCount,
+    double width = 320,
+    double textScale = 2,
+    List<LeaveBalance> balances = const [],
   }) async {
-    tester.view.physicalSize = const Size(320, 568);
+    tester.view.physicalSize = Size(width, 568);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          dashboardRepositoryProvider.overrideWithValue(_Dashboard()),
+          dashboardRepositoryProvider.overrideWithValue(_Dashboard(balances)),
         ],
         child: MaterialApp(
           theme: dark ? AppTheme.dark : AppTheme.light,
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(
               padding: const EdgeInsets.only(top: 30, bottom: 20),
-              textScaler: const TextScaler.linear(2),
+              textScaler: TextScaler.linear(textScale),
             ),
             child: child!,
           ),
@@ -43,6 +47,41 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+  }
+
+  for (final width in [320.0, 400.0]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('Leave ring fits labels at $width dp, text scale $scale', (
+        tester,
+      ) async {
+        await pumpHome(
+          tester,
+          width: width,
+          textScale: scale,
+          balances: const [
+            LeaveBalance(
+              type: 'Cuti tahunan demo',
+              total: 12,
+              used: 2,
+              colorIndex: 0,
+            ),
+          ],
+        );
+        await tester.scrollUntilVisible(find.text('hari'), 200);
+        await tester.pumpAndSettle();
+        final ring = find.byType(LeaveBalanceRing);
+        final rect = tester.getRect(ring);
+        expect(rect.width, greaterThanOrEqualTo(112));
+        expect(rect.height, rect.width);
+        final inner = rect.deflate(24);
+        for (final label in ['10', 'hari']) {
+          final labelRect = tester.getRect(find.text(label));
+          expect(inner.contains(labelRect.topLeft), isTrue);
+          expect(inner.contains(labelRect.bottomRight), isTrue);
+        }
+        expect(tester.takeException(), isNull);
+      });
+    }
   }
 
   for (final dark in [false, true]) {
@@ -119,14 +158,17 @@ void main() {
 }
 
 class _Dashboard implements DashboardRepository {
+  _Dashboard(this.balances);
+  final List<LeaveBalance> balances;
   @override
-  DashboardSnapshot get current => const DashboardSnapshot(
-    employee: DashboardEmployee(
+  DashboardSnapshot get current => DashboardSnapshot(
+    employee: const DashboardEmployee(
       name: 'Fixture Employee dengan nama panjang',
       initials: 'FE',
       avatarColorIndex: 0,
     ),
-    leaveBalances: [],
+    leaveBalances: balances,
+    leaveBalancesAvailable: true,
     announcements: [],
   );
 

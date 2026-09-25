@@ -31,7 +31,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Kamera digunakan untuk mengambil selfie verifikasi saat mencatat absensi.</string>
+	<string>Kamera depan digunakan untuk deteksi wajah dan pengujian Face ID. Foto tidak disimpan oleh layar deteksi.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Lokasi digunakan saat aplikasi terbuka untuk memverifikasi area absensi.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

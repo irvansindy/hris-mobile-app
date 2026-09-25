@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hrm_app/core/config/demo_mode.dart';
+import 'package:hrm_app/features/dashboard/presentation/widgets/leave_balance_ring.dart';
 
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
@@ -77,6 +79,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final dashboard = ref.watch(dashboardControllerProvider);
+    final demoSections = ref.watch(demoHomeSectionsBuilderProvider);
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () async {
@@ -94,11 +97,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   AppInitialAvatar(name: dashboard.employee.name, size: 42),
                   const SizedBox(width: 11),
                   Expanded(
-                    child: Text(
-                      dashboard.employee.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          dashboard.employee.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        if (dashboard.employee.role != null)
+                          Text(
+                            dashboard.employee.role!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -130,7 +146,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
                 AppSpacing.screenHorizontal,
-                12,
+                22,
                 AppSpacing.screenHorizontal,
                 AppSpacing.scrollBottom,
               ),
@@ -184,6 +200,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           .refresh,
                     ),
                   ],
+                  if (demoSections != null) ...[
+                    const SizedBox(height: 12),
+                    demoSections(context),
+                  ],
                   if (dashboard.leaveBalancesAvailable ||
                       dashboard.leaveBalancesError != null) ...[
                     const SizedBox(height: 12),
@@ -195,6 +215,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       onRetry: ref
                           .read(dashboardControllerProvider.notifier)
                           .refresh,
+                      onApply: widget.onOpenRequests,
                     ),
                   ],
                 ],
@@ -431,11 +452,13 @@ class _LeaveBalanceCard extends StatelessWidget {
     required this.selected,
     required this.onSelected,
     required this.onRetry,
+    this.onApply,
   });
   final DashboardSnapshot dashboard;
   final int selected;
   final ValueChanged<int> onSelected;
   final VoidCallback onRetry;
+  final VoidCallback? onApply;
 
   @override
   Widget build(BuildContext context) {
@@ -458,34 +481,44 @@ class _LeaveBalanceCard extends StatelessWidget {
     final index = selected.clamp(0, dashboard.leaveBalances.length - 1);
     final active = dashboard.leaveBalances[index];
     final remaining = (active.total - active.used).clamp(0, active.total);
-    final progress = active.total == 0 ? 0.0 : remaining / active.total;
     return AppSurfaceCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Saldo Cuti', style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Saldo Cuti',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              if (onApply != null)
+                TextButton(onPressed: onApply, child: const Text('Ajukan')),
+            ],
+          ),
           const SizedBox(height: 14),
           LayoutBuilder(
             builder: (context, constraints) {
               final compact =
-                  constraints.maxWidth < 320 ||
+                  constraints.maxWidth < 280 ||
                   MediaQuery.textScalerOf(context).scale(1) > 1.35;
               final chart = Semantics(
                 label:
                     '$remaining dari ${active.total} hari ${active.type} tersisa',
                 child: SizedBox.square(
-                  dimension: 124,
+                  dimension: MediaQuery.textScalerOf(
+                    context,
+                  ).scale(124).clamp(124, constraints.maxWidth),
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      CircularProgressIndicator(
-                        value: progress,
-                        strokeWidth: 14,
-                        strokeCap: StrokeCap.round,
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHigh,
+                      Positioned.fill(
+                        child: LeaveBalanceRing(
+                          balances: dashboard.leaveBalances,
+                          selected: index,
+                        ),
                       ),
                       ExcludeSemantics(
                         child: Column(
@@ -496,7 +529,7 @@ class _LeaveBalanceCard extends StatelessWidget {
                               style: Theme.of(context).textTheme.headlineLarge,
                             ),
                             Text(
-                              'hari',
+                              active.shortLabel ?? 'hari',
                               style: Theme.of(context).textTheme.labelSmall,
                             ),
                           ],
@@ -517,6 +550,7 @@ class _LeaveBalanceCard extends StatelessWidget {
                         label: entry.$2.type,
                         value: '$value h',
                         selected: entry.$1 == index,
+                        color: leaveBalanceColor(entry.$2.colorIndex),
                         onTap: () => onSelected(entry.$1),
                       );
                     })
@@ -535,6 +569,11 @@ class _LeaveBalanceCard extends StatelessWidget {
                     );
             },
           ),
+          const SizedBox(height: 12),
+          Text(
+            '$remaining dari ${active.total} hari tersisa${active.note == null ? '' : ' · ${active.note}'}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ],
       ),
     );
@@ -547,11 +586,13 @@ class _BalanceRow extends StatelessWidget {
     required this.value,
     required this.selected,
     required this.onTap,
+    required this.color,
   });
   final String label;
   final String value;
   final bool selected;
   final VoidCallback onTap;
+  final Color color;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -571,10 +612,7 @@ class _BalanceRow extends StatelessWidget {
               Container(
                 width: 8,
                 height: 8,
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
               const SizedBox(width: 9),
               Expanded(

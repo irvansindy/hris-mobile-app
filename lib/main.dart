@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:hrm_app/demo/demo_overrides.dart';
+import 'package:hrm_app/core/config/demo_mode.dart';
+import 'package:hrm_app/demo/demo_store.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -26,12 +30,21 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
   final preferences = await SharedPreferences.getInstance();
+  DemoStore? demo;
+  if (const bool.fromEnvironment('DEMO_MODE')) {
+    if (!kDebugMode) {
+      throw StateError('Mode demo hanya tersedia pada build debug.');
+    }
+    demo = DemoStore(preferences);
+    await demo.load();
+  }
   final config = AppConfig.fromEnvironment();
   runApp(
     ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(preferences),
         appConfigProvider.overrideWithValue(config),
+        if (demo != null) ...demoOverrides(demo),
       ],
       child: const HrmsApp(),
     ),
@@ -65,6 +78,13 @@ class HrmsApp extends ConsumerWidget {
           ? Duration.zero
           : AppMotion.control,
       routerConfig: router,
+      builder: ref.watch(demoModeProvider)
+          ? (context, child) => Banner(
+              message: 'DEMO',
+              location: BannerLocation.topStart,
+              child: child!,
+            )
+          : null,
     );
   }
 }

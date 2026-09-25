@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hrm_app/core/errors/failure.dart';
 import 'package:hrm_app/core/errors/result.dart';
+import 'package:hrm_app/core/config/demo_mode.dart';
+import 'package:hrm_app/core/face_id/face_id_providers.dart';
 import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/core/services/location_gateway.dart';
 import 'package:hrm_app/core/services/location_service.dart';
@@ -122,6 +124,81 @@ void main() {
     expect(location.openedAppSettings, isTrue);
     expect(repository.clockInCalls, 0);
   });
+
+  testWidgets('demo attendance submits only after camera validation succeeds', (
+    tester,
+  ) async {
+    final repository = _Repository();
+    var verificationCalls = 0;
+    await _pump(
+      tester,
+      repository: repository,
+      demo: true,
+      faceVerificationLauncher:
+          ({required context, required employeeId, required companyId}) async {
+            verificationCalls++;
+            expect(employeeId, 'employee-1');
+            expect(companyId, 'company-1');
+            return true;
+          },
+    );
+
+    await tester.tap(find.text('Catat masuk'));
+    await tester.pumpAndSettle();
+
+    expect(verificationCalls, 1);
+    expect(repository.clockInCalls, 1);
+    expect(find.text('Konfirmasi catat masuk'), findsNothing);
+    expect(
+      find.text('Absensi demo tersimpan setelah validasi kamera.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('demo attendance stays blocked when Face ID is not enrolled', (
+    tester,
+  ) async {
+    final repository = _Repository();
+    await _pump(
+      tester,
+      repository: repository,
+      demo: true,
+      faceVerificationLauncher:
+          ({required context, required employeeId, required companyId}) async =>
+              throw const FaceEnrollmentRequiredException(),
+    );
+
+    await tester.tap(find.text('Catat masuk'));
+    await tester.pumpAndSettle();
+
+    expect(repository.clockInCalls, 0);
+    expect(
+      find.text(
+        'Face ID demo belum disiapkan. Buka Profil, lalu simpan setup Face ID sebelum absensi.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('closing face camera never submits demo attendance', (
+    tester,
+  ) async {
+    final repository = _Repository();
+    await _pump(
+      tester,
+      repository: repository,
+      demo: true,
+      faceVerificationLauncher:
+          ({required context, required employeeId, required companyId}) async =>
+              false,
+    );
+
+    await tester.tap(find.text('Catat masuk'));
+    await tester.pumpAndSettle();
+
+    expect(repository.clockInCalls, 0);
+    expect(find.text('Konfirmasi catat masuk'), findsNothing);
+  });
 }
 
 Future<void> _pump(
@@ -129,6 +206,8 @@ Future<void> _pump(
   required _Repository repository,
   SelfieGateway? selfie,
   LocationGateway location = const _Location(),
+  bool demo = false,
+  DemoFaceVerificationLauncher? faceVerificationLauncher,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -143,6 +222,11 @@ Future<void> _pump(
         ),
         attendanceRepositoryProvider.overrideWithValue(repository),
         locationServiceProvider.overrideWithValue(location),
+        if (demo) demoModeProvider.overrideWithValue(true),
+        if (faceVerificationLauncher != null)
+          demoFaceVerificationLauncherProvider.overrideWithValue(
+            faceVerificationLauncher,
+          ),
         if (selfie != null) selfieServiceProvider.overrideWithValue(selfie),
       ],
       child: const MaterialApp(home: AttendanceScreen()),

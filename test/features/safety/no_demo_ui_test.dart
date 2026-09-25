@@ -338,7 +338,11 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          await tester.ensureVisible(find.text('Jam Kerja'));
+          await tester.scrollUntilVisible(
+            find.text('Jam Kerja'),
+            120,
+            scrollable: find.byType(Scrollable).first,
+          );
           await tester.pumpAndSettle();
           await tester.tap(find.text('Jam Kerja'));
           await tester.pumpAndSettle();

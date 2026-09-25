@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hrm_app/core/config/demo_mode.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hrm_app/core/errors/failure.dart';
+import 'package:hrm_app/core/face_id/face_id_providers.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/services/location_gateway.dart';
 import 'package:hrm_app/core/services/location_service.dart';
@@ -26,6 +28,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
   CapturedSelfie? _selfie;
   String? _captureError;
   bool _capturing = false;
+  bool _verifyingFace = false;
   int _historyPage = 1;
   DateTime _historyMonth = DateTime(DateTime.now().year, DateTime.now().month);
   AttendanceStatus _filter = AttendanceStatus.onTime;
@@ -36,6 +39,8 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(featureSessionProvider);
+    final demo = ref.watch(demoModeProvider);
+    final demoSummary = ref.watch(demoAttendanceSummaryBuilderProvider);
     final today = ref.watch(attendanceControllerProvider(session));
     final value = today.valueOrNull;
     final record = value?.record;
@@ -51,7 +56,9 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
             ? policy.supportsFaceRecognition
             : policy.supportsMobileGps);
     final canSubmit =
+        !(demo && record?.checkedOutAt != null) &&
         !today.isLoading &&
+        !_verifyingFace &&
         record != null &&
         policy != null &&
         supported &&
@@ -85,7 +92,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                 title: 'Absensi',
                 subtitle: 'Log kehadiran Anda',
                 trailing: FilledButton(
-                  onPressed: () => context.push('/attendance/requests'),
+                  onPressed: () => context.push('/requests/leave/new'),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(44, 44),
                     padding: const EdgeInsets.symmetric(horizontal: 15),
@@ -93,16 +100,26 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: const Text('Pengajuan'),
+                  child: const Text('Ajukan Cuti'),
                 ),
               ),
               const SizedBox(height: 18),
-              Text('Ringkasan', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 12),
-              if (value != null) ...[
-                _AttendanceRecordCard(record: value.record),
+              if (demoSummary != null) ...[
+                demoSummary(context),
                 const SizedBox(height: 12),
-                _PolicyCard(value: value.context, record: value.record),
+              ] else ...[
+                Text(
+                  'Ringkasan',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (value != null) ...[
+                if (!demo) ...[
+                  _AttendanceRecordCard(record: value.record),
+                  const SizedBox(height: 12),
+                  _PolicyCard(value: value.context, record: value.record),
+                ],
               ] else if (today.isLoading)
                 const AppStateView.loading(
                   title: 'Memuat absensi',
@@ -132,9 +149,15 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                 height: 52,
                 child: FilledButton.icon(
                   onPressed: canSubmit
-                      ? () => _confirmAndSubmit(session, record, needsSelfie)
+                      ? () => demo
+                            ? _verifyDemoFaceAndSubmit(
+                                session,
+                                record,
+                                needsSelfie,
+                              )
+                            : _confirmAndSubmit(session, record, needsSelfie)
                       : null,
-                  icon: today.isLoading
+                  icon: today.isLoading || _verifyingFace
                       ? const SizedBox.square(
                           dimension: 20,
                           child: AppLoadingIndicator(
@@ -148,8 +171,10 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                               : Icons.login_rounded,
                         ),
                   label: Text(
-                    today.isLoading
-                        ? 'Memproses...'
+                    today.isLoading || _verifyingFace
+                        ? _verifyingFace
+                              ? 'Memvalidasi wajah...'
+                              : 'Memproses...'
                         : record?.isActive == true
                         ? 'Catat pulang'
                         : 'Catat masuk',
@@ -283,7 +308,9 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              needsSelfie
+              ref.read(demoModeProvider)
+                  ? 'Catatan demo disimpan di perangkat; GPS dan wajah tidak diverifikasi.'
+                  : needsSelfie
                   ? 'Lokasi perangkat dan selfie akan dikirim untuk diverifikasi server.'
                   : 'Lokasi perangkat akan dikirim untuk diverifikasi server.',
             ),
@@ -310,6 +337,63 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    await _submitAttendance(session, record, needsSelfie);
+  }
+
+  Future<void> _verifyDemoFaceAndSubmit(
+    FeatureSession session,
+    AttendanceEntity record,
+    bool needsSelfie,
+  ) async {
+    final employeeId = session.context?.employeeId;
+    final companyId = session.context?.activeCompanyId;
+    if (employeeId == null || companyId == null) {
+      _showFaceMessage(
+        'Identitas employee atau company aktif tidak tersedia. Masuk ulang lalu coba lagi.',
+      );
+      return;
+    }
+    setState(() => _verifyingFace = true);
+    try {
+      final verified = await ref.read(demoFaceVerificationLauncherProvider)(
+        context: context,
+        employeeId: employeeId,
+        companyId: companyId,
+      );
+      if (!mounted || !verified) return;
+      await _submitAttendance(session, record, needsSelfie);
+    } on FaceEnrollmentRequiredException {
+      if (mounted) {
+        _showFaceMessage(
+          'Face ID demo belum disiapkan. Buka Profil, lalu simpan setup Face ID sebelum absensi.',
+        );
+      }
+    } on FormatException {
+      if (mounted) {
+        _showFaceMessage(
+          'Data setup Face ID tidak valid untuk akun atau perangkat ini. Hapus lalu lakukan setup ulang.',
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        _showFaceMessage('Validasi wajah tidak dapat dibuka. Coba lagi.');
+      }
+    } finally {
+      if (mounted) setState(() => _verifyingFace = false);
+    }
+  }
+
+  void _showFaceMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _submitAttendance(
+    FeatureSession session,
+    AttendanceEntity record,
+    bool needsSelfie,
+  ) async {
     final success = await ref
         .read(attendanceControllerProvider(session).notifier)
         .toggleAttendance(selfie: needsSelfie ? _selfie : null);
@@ -326,7 +410,9 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          record.isActive
+          ref.read(demoModeProvider)
+              ? 'Absensi demo tersimpan setelah validasi kamera.'
+              : record.isActive
               ? 'Waktu pulang tercatat di server.'
               : 'Waktu masuk tercatat di server.',
         ),

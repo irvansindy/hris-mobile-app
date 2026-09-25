@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hrm_app/core/network/request_context.dart';
+import 'package:hrm_app/core/config/demo_mode.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
@@ -24,9 +25,12 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final demoBuilder = ref.watch(demoRequestsBuilderProvider);
+    if (demoBuilder != null) return demoBuilder(context);
     final session = ref.watch(featureSessionProvider);
     final query = RequestPageQuery(session: session, kind: _kind, page: _page);
     final state = ref.watch(requestPageProvider(query));
+    final demo = ref.watch(demoModeProvider);
     final canCreateLeave =
         ref
             .watch(requestContextProvider)
@@ -40,97 +44,121 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
             .contains('attendance:create') ==
         true;
     return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: () => ref.refresh(requestPageProvider(query).future),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.screenHorizontal,
-            16,
-            AppSpacing.screenHorizontal,
-            100,
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          onRefresh: () => ref.refresh(requestPageProvider(query).future),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.screenHorizontal,
+              16,
+              AppSpacing.screenHorizontal,
+              100,
+            ),
+            children: [
+              AppPageHeader(
+                title: 'Pengajuan',
+                subtitle: demo
+                    ? 'Data pengajuan lokal'
+                    : 'Riwayat pengajuan Anda',
+              ),
+              const SizedBox(height: 18),
+              state.when(
+                loading: () => const AppStateView.loading(
+                  title: 'Memuat pengajuan',
+                  message: 'Mengambil status terbaru dari server.',
+                ),
+                error: (error, _) => AppStateView(
+                  kind: AppViewStateKind.error,
+                  title: 'Pengajuan gagal dimuat',
+                  message: 'Periksa koneksi dan coba lagi.',
+                  actionLabel: 'Coba lagi',
+                  onAction: () => ref.invalidate(requestPageProvider(query)),
+                ),
+                data: (page) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _RequestSummaryActions(
+                      canCreateLeave: canCreateLeave,
+                      pendingCount: page.items
+                          .where((item) => item.status == RequestStatus.pending)
+                          .length,
+                      onCreate: () =>
+                          _showCreateMenu(canCreateLeave, canCreateOvertime),
+                    ),
+                    const SizedBox(height: 10),
+                    _RequestActionCard(
+                      icon: Icons.apps_rounded,
+                      title: 'Layanan Employee',
+                      subtitle:
+                          'Pinjaman, EWA, aktivitas, perjalanan, dan klaim',
+                      onTap: () => context.push('/ess'),
+                    ),
+                    const SizedBox(height: 18),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 0,
+                      children: [
+                        _RequestFilterPill(
+                          label: 'Cuti',
+                          selected: _kind == RequestKind.leave,
+                          onTap: () => setState(() {
+                            _kind = RequestKind.leave;
+                            _page = 1;
+                          }),
+                        ),
+                        _RequestFilterPill(
+                          label: 'Izin',
+                          selected: _kind == RequestKind.permission,
+                          onTap: () => setState(() {
+                            _kind = RequestKind.permission;
+                            _page = 1;
+                          }),
+                        ),
+                        _RequestFilterPill(
+                          label: 'Aktif',
+                          selected: _active,
+                          onTap: () => setState(() => _active = true),
+                        ),
+                        _RequestFilterPill(
+                          label: 'Selesai',
+                          selected: !_active,
+                          onTap: () => setState(() => _active = false),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Riwayat',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    _RequestList(
+                      page: page,
+                      active: _active,
+                      onOpen: (item) {
+                        if (item.kind == RequestKind.leave) {
+                          context.push(
+                            '/requests/leave/${item.id}',
+                            extra: item,
+                          );
+                        } else {
+                          _showPermissionDetail(item);
+                        }
+                      },
+                      onPrevious: page.page > 1
+                          ? () => setState(() => _page--)
+                          : null,
+                      onNext: page.hasNextPage
+                          ? () => setState(() => _page++)
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          children: [
-            const AppPageHeader(
-              title: 'Pengajuan',
-              subtitle: 'Status terbaru dari server',
-            ),
-            const SizedBox(height: 18),
-            state.when(
-              loading: () => const AppStateView.loading(
-                title: 'Memuat pengajuan',
-                message: 'Mengambil status terbaru dari server.',
-              ),
-              error: (error, _) => AppStateView(
-                kind: AppViewStateKind.error,
-                title: 'Pengajuan gagal dimuat',
-                message: 'Periksa koneksi dan coba lagi.',
-                actionLabel: 'Coba lagi',
-                onAction: () => ref.invalidate(requestPageProvider(query)),
-              ),
-              data: (page) => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _RequestSummaryActions(
-                    canCreateLeave: canCreateLeave,
-                    pendingCount: page.items
-                        .where((item) => item.status == RequestStatus.pending)
-                        .length,
-                    onCreate: () =>
-                        _showCreateMenu(canCreateLeave, canCreateOvertime),
-                  ),
-                  const SizedBox(height: 10),
-                  _RequestActionCard(
-                    icon: Icons.apps_rounded,
-                    title: 'Layanan Employee',
-                    subtitle: 'Pinjaman, EWA, aktivitas, perjalanan, dan klaim',
-                    onTap: () => context.push('/ess'),
-                  ),
-                  const SizedBox(height: 18),
-                  AppSegmentedControl<RequestKind>(
-                    values: const [RequestKind.leave, RequestKind.permission],
-                    selected: _kind,
-                    labelBuilder: (value) =>
-                        value == RequestKind.leave ? 'Cuti' : 'Izin',
-                    onSelected: (value) => setState(() {
-                      _kind = value;
-                      _page = 1;
-                    }),
-                  ),
-                  const SizedBox(height: 8),
-                  AppSegmentedControl<bool>(
-                    values: const [true, false],
-                    selected: _active,
-                    labelBuilder: (value) => value ? 'Aktif' : 'Selesai',
-                    onSelected: (value) => setState(() => _active = value),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Riwayat',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  _RequestList(
-                    page: page,
-                    active: _active,
-                    onOpen: (item) {
-                      if (item.kind == RequestKind.leave) {
-                        context.push('/requests/leave/${item.id}', extra: item);
-                      } else {
-                        _showPermissionDetail(item);
-                      }
-                    },
-                    onPrevious: page.page > 1
-                        ? () => setState(() => _page--)
-                        : null,
-                    onNext: page.hasNextPage
-                        ? () => setState(() => _page++)
-                        : null,
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -208,6 +236,59 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
       );
 }
 
+class _RequestFilterPill extends StatelessWidget {
+  const _RequestFilterPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: IntrinsicWidth(
+        child: SizedBox(
+          height: 44,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              child: Center(
+                child: Container(
+                  key: ValueKey('request-filter-$label'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected ? colors.primary : colors.surface,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: selected ? colors.onPrimary : colors.onSurface,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _RequestActionCard extends StatelessWidget {
   const _RequestActionCard({
     required this.icon,
@@ -234,7 +315,7 @@ class _RequestActionCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(22),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 126),
+        constraints: const BoxConstraints(minHeight: 100),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

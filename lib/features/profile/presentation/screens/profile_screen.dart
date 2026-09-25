@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hrm_app/core/config/demo_mode.dart';
 
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
@@ -25,6 +26,7 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final employee = ref.watch(profileControllerProvider);
+    final demoTools = ref.watch(demoToolsBuilderProvider);
     final load = ref.watch(profileLoadStateProvider);
     final version = ref.watch(appVersionProvider);
     final darkMode = Theme.of(context).brightness == Brightness.dark;
@@ -168,6 +170,15 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 20),
                 const AppSectionLabel('Pengaturan'),
+                if (demoTools != null) ...[
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(
+                      context,
+                    ).push(MaterialPageRoute<void>(builder: demoTools)),
+                    child: const Text('Pengujian demo · Face ID'),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 AppSurfaceCard(
                   padding: const EdgeInsets.all(16),
                   child: Row(
