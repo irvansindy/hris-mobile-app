@@ -265,6 +265,65 @@ class DemoDashboard implements DashboardRepository {
           ? null
           : DateTime.parse(store.today!['in'] as String),
     ),
+    teamSummary: const DashboardTeamSummary(
+      available: true,
+      presentCount: 6,
+      leaveCount: 2,
+      division: 'Divisi Marketing',
+      members: [
+        DashboardTeamMember(
+          initials: 'RS',
+          label: 'Rani',
+          detail: 'Hadir di kantor',
+        ),
+        DashboardTeamMember(
+          initials: 'DA',
+          label: 'Dina',
+          detail: 'Cuti tahunan',
+        ),
+        DashboardTeamMember(initials: 'YP', label: 'Yoga', detail: 'WFH'),
+        DashboardTeamMember(
+          initials: '+4',
+          label: 'Anggota lainnya',
+          detail: '3 hadir · 1 cuti',
+        ),
+      ],
+    ),
+    nextShift: const DashboardShiftSummary(
+      available: true,
+      dayLabel: 'Senin',
+      timeRange: '08.00 – 17.00',
+      location: 'Head Office Jakarta',
+      typeLabel: 'Reguler',
+    ),
+    attendancePattern: const DashboardAttendancePattern(
+      available: true,
+      rows: [
+        DashboardAttendancePatternRow(
+          label: 'Sen',
+          levels: [3, 2, 1, 3, 0, 3, 2, 1, 3, 2, 3],
+        ),
+        DashboardAttendancePatternRow(
+          label: 'Sel',
+          levels: [1, 3, 2, 0, 3, 2, 1, 3, 2, 3, 1],
+        ),
+        DashboardAttendancePatternRow(
+          label: 'Rab',
+          levels: [3, 2, 0, 3, 2, 1, 3, 2, 1, 3, 3],
+        ),
+        DashboardAttendancePatternRow(
+          label: 'Kam',
+          levels: [2, 3, 1, 3, 3, 2, 1, 3, 0, 3, 2],
+        ),
+        DashboardAttendancePatternRow(
+          label: 'Jum',
+          levels: [0, 2, 3, 1, 3, 3, 2, 3, 1, 2, 3],
+        ),
+      ],
+      onsitePercent: 75,
+      remotePercent: 15,
+      leavePercent: 10,
+    ),
   );
   @override
   Future<DashboardSnapshot> refresh() async => current;
