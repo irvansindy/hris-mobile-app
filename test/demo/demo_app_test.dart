@@ -61,7 +61,7 @@ void main() {
       await tester.scrollUntilVisible(find.text('Lihat semua'), 180);
       await tester.tap(find.text('Lihat semua'));
       await tester.pumpAndSettle();
-      expect(find.text('Tim contoh · Divisi Marketing'), findsOneWidget);
+      expect(find.text('Tim Hari Ini · Divisi Marketing'), findsOneWidget);
       expect(find.byType(AppQuickActionFab).hitTestable(), findsNothing);
       await tester.tapAt(const Offset(20, 100));
       await tester.pumpAndSettle();
