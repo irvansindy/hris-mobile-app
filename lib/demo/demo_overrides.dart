@@ -8,7 +8,7 @@ import 'package:hrm_app/core/network/dio_client.dart';
 import 'package:hrm_app/core/services/location_service.dart';
 import 'package:hrm_app/demo/demo_app.dart';
 import 'package:hrm_app/demo/demo_store.dart';
-import 'package:hrm_app/demo/demo_design_sections.dart';
+import 'package:hrm_app/demo/demo_attendance_summary.dart';
 import 'package:hrm_app/demo/demo_design_repositories.dart';
 import 'package:hrm_app/demo/demo_requests_screen.dart';
 import 'package:hrm_app/features/calendar/calendar_dependencies.dart';
@@ -40,9 +40,6 @@ List<Override> demoOverrides(
       ),
     demoRequestsBuilderProvider.overrideWithValue(
       (_) => DemoRequestsScreen(store: store),
-    ),
-    demoHomeSectionsBuilderProvider.overrideWithValue(
-      (_) => const DemoHomeSections(),
     ),
     demoAttendanceSummaryBuilderProvider.overrideWithValue(
       (_) => DemoAttendanceSummary(store: store),

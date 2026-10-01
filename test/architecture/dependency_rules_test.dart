@@ -47,6 +47,22 @@ void main() {
     );
   });
 
+  test('feature presentation never imports demo implementations', () {
+    final violations = <String>[];
+    for (final file in _dartFiles('lib/features')) {
+      if (!file.path.contains('/presentation/')) continue;
+      if (file.readAsStringSync().contains('package:hrm_app/demo/')) {
+        violations.add(file.path);
+      }
+    }
+
+    expect(
+      violations,
+      isEmpty,
+      reason: 'Presentation must receive domain data, not demo widgets',
+    );
+  });
+
   test('features do not reach into another feature', () {
     final violations = <String>[];
     final featureImport = RegExp(r'package:hrm_app/features/([^/]+)/');
