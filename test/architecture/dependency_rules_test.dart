@@ -80,6 +80,25 @@ void main() {
     );
   });
 
+  test('self-service presentation does not select a demo layout', () {
+    const forbidden = [
+      'demoModeProvider',
+      'demoRequestsBuilderProvider',
+      'package:hrm_app/demo/',
+    ];
+    final violations = <String>[];
+    for (final file in _dartFiles('lib/features/self_service/presentation')) {
+      final source = file.readAsStringSync();
+      if (forbidden.any(source.contains)) violations.add(file.path);
+    }
+
+    expect(
+      violations,
+      isEmpty,
+      reason: 'Pengajuan layout must be driven by repository data only',
+    );
+  });
+
   test('features do not reach into another feature', () {
     final violations = <String>[];
     final featureImport = RegExp(r'package:hrm_app/features/([^/]+)/');
