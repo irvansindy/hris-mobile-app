@@ -216,6 +216,19 @@ void main() {
     expect(button.onPressed, isNull);
     expect(repository.clockInCalls, 0);
   });
+
+  testWidgets('completed server attendance cannot be submitted again', (
+    tester,
+  ) async {
+    final repository = _Repository(completed: true);
+    await _pump(tester, repository: repository);
+
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Catat masuk'),
+    );
+    expect(button.onPressed, isNull);
+    expect(repository.clockInCalls, 0);
+  });
 }
 
 Future<void> _pump(

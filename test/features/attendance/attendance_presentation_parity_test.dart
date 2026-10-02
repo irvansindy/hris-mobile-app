@@ -50,6 +50,16 @@ void main() {
     );
     final demoOffsets = _sectionOffsets(tester, sectionKeys);
     expect(find.text('Demo lokal'), findsWidgets);
+    expect(
+      find.text(
+        'Simulasi lokal; GPS tidak diverifikasi, wajah diverifikasi di perangkat.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Simulasi lokal; GPS dan wajah tidak diverifikasi.'),
+      findsNothing,
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

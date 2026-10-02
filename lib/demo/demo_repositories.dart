@@ -109,7 +109,9 @@ class DemoAttendance extends AttendanceRepository {
       isWorkingDay: true,
       allowHolidayAttendance: true,
       allowWeekendAttendance: true,
-      warnings: ['Simulasi lokal; GPS dan wajah tidak diverifikasi.'],
+      warnings: [
+        'Simulasi lokal; GPS tidak diverifikasi, wajah diverifikasi di perangkat.',
+      ],
       branchName: 'Demo lokal',
       workStart: '08:00',
       workEnd: '17:00',
