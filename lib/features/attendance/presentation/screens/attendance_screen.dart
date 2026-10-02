@@ -12,7 +12,6 @@ import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
 import 'package:hrm_app/core/widgets/app_state_view.dart';
 import 'package:hrm_app/features/attendance/attendance_providers.dart';
-import 'package:hrm_app/features/attendance/domain/entities/attendance_context.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_history.dart';
 import 'package:hrm_app/features/attendance/presentation/widgets/attendance_overview.dart';

@@ -63,6 +63,23 @@ void main() {
     );
   });
 
+  test('attendance presentation does not select a demo layout', () {
+    final violations = <String>[];
+    for (final file in _dartFiles('lib/features/attendance/presentation')) {
+      final source = file.readAsStringSync();
+      if (source.contains('demoModeProvider') ||
+          source.contains('demoAttendanceSummaryBuilderProvider')) {
+        violations.add(file.path);
+      }
+    }
+
+    expect(
+      violations,
+      isEmpty,
+      reason: 'Attendance layout must be driven by domain data and capability',
+    );
+  });
+
   test('features do not reach into another feature', () {
     final violations = <String>[];
     final featureImport = RegExp(r'package:hrm_app/features/([^/]+)/');
