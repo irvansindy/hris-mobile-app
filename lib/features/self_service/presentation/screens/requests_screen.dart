@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hrm_app/core/network/request_context.dart';
-import 'package:hrm_app/core/config/demo_mode.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
@@ -18,19 +17,30 @@ class RequestsScreen extends ConsumerStatefulWidget {
   ConsumerState<RequestsScreen> createState() => _RequestsScreenState();
 }
 
+enum _RequestCategory { all, leave }
+
+enum _RequestStatusFilter { all, pending, completed }
+
 class _RequestsScreenState extends ConsumerState<RequestsScreen> {
-  RequestKind _kind = RequestKind.leave;
-  bool _active = true;
+  _RequestCategory _category = _RequestCategory.all;
+  _RequestStatusFilter _status = _RequestStatusFilter.all;
   int _page = 1;
 
   @override
   Widget build(BuildContext context) {
-    final demoBuilder = ref.watch(demoRequestsBuilderProvider);
-    if (demoBuilder != null) return demoBuilder(context);
     final session = ref.watch(featureSessionProvider);
-    final query = RequestPageQuery(session: session, kind: _kind, page: _page);
-    final state = ref.watch(requestPageProvider(query));
-    final demo = ref.watch(demoModeProvider);
+    final leaveQuery = RequestPageQuery(
+      session: session,
+      kind: RequestKind.leave,
+      page: _page,
+    );
+    final permissionQuery = RequestPageQuery(
+      session: session,
+      kind: RequestKind.permission,
+      page: _page,
+    );
+    final leaveState = ref.watch(requestPageProvider(leaveQuery));
+    final permissionState = ref.watch(requestPageProvider(permissionQuery));
     final canCreateLeave =
         ref
             .watch(requestContextProvider)
@@ -47,7 +57,12 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
-          onRefresh: () => ref.refresh(requestPageProvider(query).future),
+          onRefresh: () async {
+            await Future.wait([
+              ref.refresh(requestPageProvider(leaveQuery).future),
+              ref.refresh(requestPageProvider(permissionQuery).future),
+            ]);
+          },
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(
@@ -57,110 +72,209 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
               100,
             ),
             children: [
-              AppPageHeader(
-                title: 'Pengajuan',
-                subtitle: demo
-                    ? 'Data pengajuan lokal'
-                    : 'Riwayat pengajuan Anda',
-              ),
-              const SizedBox(height: 18),
-              state.when(
-                loading: () => const AppStateView.loading(
-                  title: 'Memuat pengajuan',
-                  message: 'Mengambil status terbaru dari server.',
-                ),
-                error: (error, _) => AppStateView(
-                  kind: AppViewStateKind.error,
-                  title: 'Pengajuan gagal dimuat',
-                  message: 'Periksa koneksi dan coba lagi.',
-                  actionLabel: 'Coba lagi',
-                  onAction: () => ref.invalidate(requestPageProvider(query)),
-                ),
-                data: (page) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _RequestSummaryActions(
-                      canCreateLeave: canCreateLeave,
-                      pendingCount: page.items
-                          .where((item) => item.status == RequestStatus.pending)
-                          .length,
-                      onCreate: () =>
-                          _showCreateMenu(canCreateLeave, canCreateOvertime),
-                    ),
-                    const SizedBox(height: 10),
-                    _RequestActionCard(
-                      icon: Icons.apps_rounded,
-                      title: 'Layanan Employee',
-                      subtitle:
-                          'Pinjaman, EWA, aktivitas, perjalanan, dan klaim',
-                      onTap: () => context.push('/ess'),
-                    ),
-                    const SizedBox(height: 18),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 0,
-                      children: [
-                        _RequestFilterPill(
-                          label: 'Cuti',
-                          selected: _kind == RequestKind.leave,
-                          onTap: () => setState(() {
-                            _kind = RequestKind.leave;
-                            _page = 1;
-                          }),
-                        ),
-                        _RequestFilterPill(
-                          label: 'Izin',
-                          selected: _kind == RequestKind.permission,
-                          onTap: () => setState(() {
-                            _kind = RequestKind.permission;
-                            _page = 1;
-                          }),
-                        ),
-                        _RequestFilterPill(
-                          label: 'Aktif',
-                          selected: _active,
-                          onTap: () => setState(() => _active = true),
-                        ),
-                        _RequestFilterPill(
-                          label: 'Selesai',
-                          selected: !_active,
-                          onTap: () => setState(() => _active = false),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Riwayat',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 12),
-                    _RequestList(
-                      page: page,
-                      active: _active,
-                      onOpen: (item) {
-                        if (item.kind == RequestKind.leave) {
-                          context.push(
-                            '/requests/leave/${item.id}',
-                            extra: item,
-                          );
-                        } else {
-                          _showPermissionDetail(item);
-                        }
-                      },
-                      onPrevious: page.page > 1
-                          ? () => setState(() => _page--)
-                          : null,
-                      onNext: page.hasNextPage
-                          ? () => setState(() => _page++)
-                          : null,
-                    ),
-                  ],
-                ),
+              _buildOverview(
+                leaveState: leaveState,
+                permissionState: permissionState,
+                leaveQuery: leaveQuery,
+                permissionQuery: permissionQuery,
+                canCreateLeave: canCreateLeave,
+                canCreateOvertime: canCreateOvertime,
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildOverview({
+    required AsyncValue<EmployeeRequestPage> leaveState,
+    required AsyncValue<EmployeeRequestPage> permissionState,
+    required RequestPageQuery leaveQuery,
+    required RequestPageQuery permissionQuery,
+    required bool canCreateLeave,
+    required bool canCreateOvertime,
+  }) {
+    if (leaveState.hasError ||
+        (_category == _RequestCategory.all && permissionState.hasError)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AppPageHeader(
+            title: 'Pengajuan',
+            subtitle: 'Status terbaru dari server',
+          ),
+          const SizedBox(height: 18),
+          AppStateView(
+            kind: AppViewStateKind.error,
+            title: 'Pengajuan gagal dimuat',
+            message: 'Periksa koneksi dan coba lagi.',
+            actionLabel: 'Coba lagi',
+            onAction: () {
+              ref.invalidate(requestPageProvider(leaveQuery));
+              ref.invalidate(requestPageProvider(permissionQuery));
+            },
+          ),
+        ],
+      );
+    }
+    if (leaveState.isLoading ||
+        (_category == _RequestCategory.all && permissionState.isLoading)) {
+      return const Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppPageHeader(
+            title: 'Pengajuan',
+            subtitle: 'Status terbaru dari server',
+          ),
+          SizedBox(height: 18),
+          AppStateView.loading(
+            title: 'Memuat pengajuan',
+            message: 'Mengambil status terbaru dari server.',
+          ),
+        ],
+      );
+    }
+
+    final leave = leaveState.requireValue;
+    final permission = permissionState.valueOrNull;
+    final page = _category == _RequestCategory.leave
+        ? leave
+        : EmployeeRequestPage(
+            items: [...leave.items, ...?permission?.items],
+            page: _page,
+            totalPages: leave.totalPages > (permission?.totalPages ?? 0)
+                ? leave.totalPages
+                : permission?.totalPages ?? leave.totalPages,
+            total: leave.total + (permission?.total ?? 0),
+          );
+    final pending = page.items
+        .where((item) => item.status == RequestStatus.pending)
+        .length;
+    final completed = page.items.length - pending;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppPageHeader(
+          key: const ValueKey('requests-header'),
+          title: 'Pengajuan',
+          subtitle: '$pending aktif · $completed selesai',
+        ),
+        const SizedBox(height: 18),
+        _RequestSummaryActions(
+          key: const ValueKey('requests-summary-actions'),
+          canCreateLeave: canCreateLeave,
+          pendingCount: pending,
+          onCreate: () => _showCreateMenu(canCreateLeave, canCreateOvertime),
+          onPending: () =>
+              setState(() => _status = _RequestStatusFilter.pending),
+        ),
+        const SizedBox(height: 14),
+        KeyedSubtree(
+          key: const ValueKey('requests-category-filters'),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _RequestFilterPill(
+                  label: 'Semua',
+                  selected: _category == _RequestCategory.all,
+                  onTap: () => setState(() {
+                    _category = _RequestCategory.all;
+                    _page = 1;
+                  }),
+                ),
+                const SizedBox(width: 7),
+                _RequestFilterPill(
+                  label: 'Cuti',
+                  selected: _category == _RequestCategory.leave,
+                  onTap: () => setState(() {
+                    _category = _RequestCategory.leave;
+                    _page = 1;
+                  }),
+                ),
+                const SizedBox(width: 7),
+                _RequestFilterPill(
+                  label: 'Lembur',
+                  selected: false,
+                  onTap: () =>
+                      context.push('/attendance/requests?tab=overtime'),
+                ),
+                const SizedBox(width: 7),
+                _RequestFilterPill(
+                  label: 'Reimburse',
+                  selected: false,
+                  onTap: () => context.push('/ess?area=travel'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          key: const ValueKey('requests-history-header'),
+          children: [
+            Expanded(
+              child: Text(
+                'Riwayat',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            PopupMenuButton<_RequestStatusFilter>(
+              tooltip: 'Filter status pengajuan',
+              onSelected: (value) => setState(() => _status = value),
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: _RequestStatusFilter.all,
+                  child: Text('Semua'),
+                ),
+                PopupMenuItem(
+                  value: _RequestStatusFilter.pending,
+                  child: Text('Menunggu'),
+                ),
+                PopupMenuItem(
+                  value: _RequestStatusFilter.completed,
+                  child: Text('Selesai'),
+                ),
+              ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 10,
+                ),
+                child: Text(
+                  switch (_status) {
+                    _RequestStatusFilter.all => 'Semua',
+                    _RequestStatusFilter.pending => 'Menunggu',
+                    _RequestStatusFilter.completed => 'Selesai',
+                  },
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        KeyedSubtree(
+          key: const ValueKey('requests-history-content'),
+          child: _RequestList(
+            page: page,
+            status: _status,
+            onOpen: (item) {
+              if (item.kind == RequestKind.leave) {
+                context.push('/requests/leave/${item.id}', extra: item);
+              } else {
+                _showPermissionDetail(item);
+              }
+            },
+            onPrevious: page.page > 1 ? () => setState(() => _page--) : null,
+            onNext: page.hasNextPage ? () => setState(() => _page++) : null,
+          ),
+        ),
+      ],
     );
   }
 
@@ -352,14 +466,17 @@ class _RequestActionCard extends StatelessWidget {
 
 class _RequestSummaryActions extends StatelessWidget {
   const _RequestSummaryActions({
+    super.key,
     required this.canCreateLeave,
     required this.pendingCount,
     required this.onCreate,
+    required this.onPending,
   });
 
   final bool canCreateLeave;
   final int pendingCount;
   final VoidCallback onCreate;
+  final VoidCallback onPending;
 
   @override
   Widget build(BuildContext context) {
@@ -373,7 +490,8 @@ class _RequestSummaryActions extends StatelessWidget {
     final pending = _RequestActionCard(
       icon: Icons.schedule_rounded,
       title: 'Menunggu',
-      subtitle: '$pendingCount di halaman ini',
+      subtitle: '$pendingCount perlu approval',
+      onTap: onPending,
     );
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -401,14 +519,14 @@ class _RequestSummaryActions extends StatelessWidget {
 class _RequestList extends StatelessWidget {
   const _RequestList({
     required this.page,
-    required this.active,
+    required this.status,
     required this.onOpen,
     required this.onPrevious,
     required this.onNext,
   });
 
   final EmployeeRequestPage page;
-  final bool active;
+  final _RequestStatusFilter status;
   final ValueChanged<EmployeeRequest> onOpen;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
@@ -418,7 +536,11 @@ class _RequestList extends StatelessWidget {
     final items = page.items
         .where((item) {
           final isActive = item.status == RequestStatus.pending;
-          return active == isActive;
+          return switch (status) {
+            _RequestStatusFilter.all => true,
+            _RequestStatusFilter.pending => isActive,
+            _RequestStatusFilter.completed => !isActive,
+          };
         })
         .toList(growable: false);
     return Column(
@@ -433,9 +555,9 @@ class _RequestList extends StatelessWidget {
         else if (items.isEmpty)
           AppStateView(
             kind: AppViewStateKind.empty,
-            title: active
+            title: status == _RequestStatusFilter.pending
                 ? 'Tidak ada pengajuan aktif'
-                : 'Belum ada yang selesai',
+                : 'Belum ada pengajuan pada filter ini',
             message: 'Coba filter lain atau halaman berikutnya.',
           )
         else
@@ -443,23 +565,24 @@ class _RequestList extends StatelessWidget {
             _RequestCard(item: item, onTap: () => onOpen(item)),
             const SizedBox(height: AppSpacing.sm),
           ],
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: onPrevious,
-                child: const Text('Sebelumnya'),
+        if (onPrevious != null || onNext != null)
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onPrevious,
+                  child: const Text('Sebelumnya'),
+                ),
               ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: OutlinedButton(
-                onPressed: onNext,
-                child: const Text('Berikutnya'),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onNext,
+                  child: const Text('Berikutnya'),
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
       ],
     );
   }
@@ -476,27 +599,59 @@ class _RequestCard extends StatelessWidget {
     return AppSurfaceCard(
       onTap: onTap,
       semanticLabel: '${item.type}, ${status.$1}',
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item.type, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: AppSpacing.xs),
-                Text(item.dateRange),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'Dikirim ${item.submittedOn}',
-                  style: Theme.of(context).textTheme.bodySmall,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final details = Row(
+            children: [
+              const AppIconTile(
+                icon: Icons.insert_drive_file_outlined,
+                size: 38,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.totalDays == null
+                          ? item.type
+                          : '${item.type} · ${item.totalDays} hari',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    Text(
+                      'Diajukan ${item.submittedOn}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
+              ),
+            ],
+          );
+          final statusChip = AppStatusChip(label: status.$1, tone: status.$2);
+          if (constraints.maxWidth < 260 ||
+              MediaQuery.textScalerOf(context).scale(1) > 1.5) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                details,
+                const SizedBox(height: 8),
+                Align(alignment: Alignment.centerRight, child: statusChip),
               ],
-            ),
-          ),
-          AppStatusChip(label: status.$1, tone: status.$2),
-          const SizedBox(width: AppSpacing.xs),
-          const Icon(Icons.chevron_right_rounded),
-        ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: details),
+              const SizedBox(width: 6),
+              statusChip,
+            ],
+          );
+        },
       ),
     );
   }

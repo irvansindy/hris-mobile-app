@@ -9,7 +9,6 @@ import 'package:hrm_app/core/services/location_service.dart';
 import 'package:hrm_app/demo/demo_app.dart';
 import 'package:hrm_app/demo/demo_store.dart';
 import 'package:hrm_app/demo/demo_design_repositories.dart';
-import 'package:hrm_app/demo/demo_requests_screen.dart';
 import 'package:hrm_app/features/calendar/calendar_dependencies.dart';
 import 'package:hrm_app/demo/demo_repositories.dart';
 import 'package:hrm_app/features/authentication/authentication_dependencies.dart';
@@ -37,9 +36,6 @@ List<Override> demoOverrides(
       (ref) =>
           faceVerificationLauncher ??
           ref.watch(demoFaceVerificationLauncherProvider),
-    ),
-    demoRequestsBuilderProvider.overrideWithValue(
-      (_) => DemoRequestsScreen(store: store),
     ),
     authRepositoryProvider.overrideWithValue(DemoAuth(store)),
     attendanceRepositoryProvider.overrideWithValue(DemoAttendance(store)),
