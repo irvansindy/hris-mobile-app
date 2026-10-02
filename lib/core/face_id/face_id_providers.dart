@@ -7,7 +7,7 @@ class FaceEnrollmentRequiredException implements Exception {
   const FaceEnrollmentRequiredException();
 }
 
-typedef DemoFaceVerificationLauncher =
+typedef AttendanceFaceVerificationLauncher =
     Future<bool> Function({
       required BuildContext context,
       required String employeeId,
@@ -19,7 +19,7 @@ final demoFaceEnrollmentStoreProvider = Provider<DemoFaceEnrollmentStore>(
 );
 
 final demoFaceVerificationLauncherProvider =
-    Provider<DemoFaceVerificationLauncher>((ref) {
+    Provider<AttendanceFaceVerificationLauncher>((ref) {
       final store = ref.watch(demoFaceEnrollmentStoreProvider);
       return ({
         required BuildContext context,
@@ -48,3 +48,6 @@ final demoFaceVerificationLauncherProvider =
             false;
       };
     });
+
+final attendanceFaceVerificationLauncherProvider =
+    Provider<AttendanceFaceVerificationLauncher?>((_) => null);

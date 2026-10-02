@@ -8,7 +8,6 @@ import 'package:hrm_app/core/network/dio_client.dart';
 import 'package:hrm_app/core/services/location_service.dart';
 import 'package:hrm_app/demo/demo_app.dart';
 import 'package:hrm_app/demo/demo_store.dart';
-import 'package:hrm_app/demo/demo_attendance_summary.dart';
 import 'package:hrm_app/demo/demo_design_repositories.dart';
 import 'package:hrm_app/demo/demo_requests_screen.dart';
 import 'package:hrm_app/features/calendar/calendar_dependencies.dart';
@@ -26,7 +25,7 @@ List<Override> demoOverrides(
   DemoStore store, {
   DemoFaceStorage? faceStorage,
   DemoFaceEnrollmentStore? enrollmentStore,
-  DemoFaceVerificationLauncher? faceVerificationLauncher,
+  AttendanceFaceVerificationLauncher? faceVerificationLauncher,
 }) {
   final resolvedEnrollmentStore =
       enrollmentStore ??
@@ -34,15 +33,13 @@ List<Override> demoOverrides(
   return [
     demoModeProvider.overrideWithValue(true),
     demoFaceEnrollmentStoreProvider.overrideWithValue(resolvedEnrollmentStore),
-    if (faceVerificationLauncher != null)
-      demoFaceVerificationLauncherProvider.overrideWithValue(
-        faceVerificationLauncher,
-      ),
+    attendanceFaceVerificationLauncherProvider.overrideWith(
+      (ref) =>
+          faceVerificationLauncher ??
+          ref.watch(demoFaceVerificationLauncherProvider),
+    ),
     demoRequestsBuilderProvider.overrideWithValue(
       (_) => DemoRequestsScreen(store: store),
-    ),
-    demoAttendanceSummaryBuilderProvider.overrideWithValue(
-      (_) => DemoAttendanceSummary(store: store),
     ),
     authRepositoryProvider.overrideWithValue(DemoAuth(store)),
     attendanceRepositoryProvider.overrideWithValue(DemoAttendance(store)),

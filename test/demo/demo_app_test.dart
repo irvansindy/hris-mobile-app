@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -68,14 +69,37 @@ void main() {
       await tester.tap(find.text('Absensi').last);
       await tester.pumpAndSettle();
       expect(find.byType(AttendanceScreen), findsOneWidget);
-      for (final label in ['Catat masuk', 'Catat pulang']) {
-        await tester.ensureVisible(find.text(label));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text(label));
-        await tester.pumpAndSettle();
-        await tester.pump(const Duration(seconds: 5));
-        await tester.pumpAndSettle();
-      }
+      expect(
+        find.byKey(const ValueKey('attendance-summary-section')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('attendance-location-section')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('attendance-metrics-section')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('attendance-state-section')),
+        findsOneWidget,
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('attendance-submit-action')),
+        300,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Catat masuk'));
+      await tester.pumpAndSettle();
+      expect(faceVerificationCalls, 1);
+      expect(find.text('Catat pulang'), findsOneWidget);
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('attendance-submit-action')),
+      );
+      await tester.tap(find.text('Catat pulang'));
+      await tester.pumpAndSettle();
       expect(faceVerificationCalls, 2);
       expect(store.today!['out'], isNotNull);
       await tester.tap(find.text('Kalender').last);

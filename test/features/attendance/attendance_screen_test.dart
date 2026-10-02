@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hrm_app/core/errors/failure.dart';
 import 'package:hrm_app/core/errors/result.dart';
-import 'package:hrm_app/core/config/demo_mode.dart';
 import 'package:hrm_app/core/face_id/face_id_providers.dart';
 import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/core/services/location_gateway.dart';
@@ -91,6 +90,8 @@ void main() {
     );
 
     expect(repository.clockInCalls, 0);
+    await tester.ensureVisible(find.text('Ambil selfie'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ambil selfie'));
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView).first, const Offset(0, -420));
@@ -120,6 +121,8 @@ void main() {
 
     expect(find.text('Absensi belum tercatat'), findsOneWidget);
     expect(find.text('Buka pengaturan'), findsOneWidget);
+    await tester.ensureVisible(find.text('Buka pengaturan'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Buka pengaturan'));
     expect(location.openedAppSettings, isTrue);
     expect(repository.clockInCalls, 0);
@@ -133,7 +136,6 @@ void main() {
     await _pump(
       tester,
       repository: repository,
-      demo: true,
       faceVerificationLauncher:
           ({required context, required employeeId, required companyId}) async {
             verificationCalls++;
@@ -162,7 +164,6 @@ void main() {
     await _pump(
       tester,
       repository: repository,
-      demo: true,
       faceVerificationLauncher:
           ({required context, required employeeId, required companyId}) async =>
               throw const FaceEnrollmentRequiredException(),
@@ -187,7 +188,6 @@ void main() {
     await _pump(
       tester,
       repository: repository,
-      demo: true,
       faceVerificationLauncher:
           ({required context, required employeeId, required companyId}) async =>
               false,
@@ -199,6 +199,23 @@ void main() {
     expect(repository.clockInCalls, 0);
     expect(find.text('Konfirmasi catat masuk'), findsNothing);
   });
+
+  testWidgets('completed attendance cannot be submitted again', (tester) async {
+    final repository = _Repository(completed: true);
+    await _pump(
+      tester,
+      repository: repository,
+      faceVerificationLauncher:
+          ({required context, required employeeId, required companyId}) async =>
+              true,
+    );
+
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Catat masuk'),
+    );
+    expect(button.onPressed, isNull);
+    expect(repository.clockInCalls, 0);
+  });
 }
 
 Future<void> _pump(
@@ -206,8 +223,7 @@ Future<void> _pump(
   required _Repository repository,
   SelfieGateway? selfie,
   LocationGateway location = const _Location(),
-  bool demo = false,
-  DemoFaceVerificationLauncher? faceVerificationLauncher,
+  AttendanceFaceVerificationLauncher? faceVerificationLauncher,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -222,9 +238,8 @@ Future<void> _pump(
         ),
         attendanceRepositoryProvider.overrideWithValue(repository),
         locationServiceProvider.overrideWithValue(location),
-        if (demo) demoModeProvider.overrideWithValue(true),
         if (faceVerificationLauncher != null)
-          demoFaceVerificationLauncherProvider.overrideWithValue(
+          attendanceFaceVerificationLauncherProvider.overrideWithValue(
             faceVerificationLauncher,
           ),
         if (selfie != null) selfieServiceProvider.overrideWithValue(selfie),
@@ -282,10 +297,15 @@ class _DeniedLocation implements LocationGateway {
 }
 
 class _Repository extends AttendanceRepository {
-  _Repository({this.failure, this.requiresSelfie = false});
+  _Repository({
+    this.failure,
+    this.requiresSelfie = false,
+    this.completed = false,
+  });
 
   final String? failure;
   final bool requiresSelfie;
+  final bool completed;
   int clockInCalls = 0;
   AttendanceCommand? command;
 
@@ -310,15 +330,25 @@ class _Repository extends AttendanceRepository {
   );
 
   @override
-  Future<Result<AttendanceEntity>> getToday() async => const Success(
-    AttendanceEntity(
-      id: '',
-      userId: 'employee-1',
-      checkedInAt: null,
-      status: AttendanceStatus.notStarted,
-      latitude: 0,
-      longitude: 0,
-    ),
+  Future<Result<AttendanceEntity>> getToday() async => Success(
+    completed
+        ? AttendanceEntity(
+            id: 'attendance-1',
+            userId: 'employee-1',
+            checkedInAt: DateTime.utc(2026, 9, 12, 1),
+            checkedOutAt: DateTime.utc(2026, 9, 12, 9),
+            status: AttendanceStatus.completed,
+            latitude: -6.2,
+            longitude: 106.8,
+          )
+        : const AttendanceEntity(
+            id: '',
+            userId: 'employee-1',
+            checkedInAt: null,
+            status: AttendanceStatus.notStarted,
+            latitude: 0,
+            longitude: 0,
+          ),
   );
 
   @override
