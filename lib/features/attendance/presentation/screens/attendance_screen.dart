@@ -16,6 +16,7 @@ import 'package:hrm_app/features/attendance/attendance_providers.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_context.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_history.dart';
+import 'package:hrm_app/features/attendance/presentation/widgets/attendance_overview.dart';
 
 class AttendanceScreen extends ConsumerStatefulWidget {
   const AttendanceScreen({super.key});
@@ -107,19 +108,13 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
               if (demoSummary != null) ...[
                 demoSummary(context),
                 const SizedBox(height: 12),
-              ] else ...[
-                Text(
-                  'Ringkasan',
-                  style: Theme.of(context).textTheme.titleMedium,
+              ] else if (value != null) ...[
+                AttendanceOverview(
+                  contextValue: value.context,
+                  record: value.record,
+                  history: history,
                 ),
                 const SizedBox(height: 12),
-              ],
-              if (value != null) ...[
-                if (!demo) ...[
-                  _AttendanceRecordCard(record: value.record),
-                  const SizedBox(height: 12),
-                  _PolicyCard(value: value.context, record: value.record),
-                ],
               ] else if (today.isLoading)
                 const AppStateView.loading(
                   title: 'Memuat absensi',
@@ -419,200 +414,6 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
       ),
     );
   }
-}
-
-class _PolicyCard extends StatelessWidget {
-  const _PolicyCard({required this.value, required this.record});
-
-  final AttendanceContext value;
-  final AttendanceEntity record;
-
-  @override
-  Widget build(BuildContext context) {
-    final location = [
-      value.branchName,
-      value.branchCode,
-    ].whereType<String>().where((item) => item.isNotEmpty).join(' • ');
-    final locationStatus = switch (record.isWithinRadius) {
-      true => ('Di dalam area kantor', AppStatusTone.success),
-      false => ('Di luar area kantor', AppStatusTone.danger),
-      null => ('Belum diverifikasi', AppStatusTone.neutral),
-    };
-    return AppSurfaceCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final status = AppStatusChip(
-                label: locationStatus.$1 == 'Di dalam area kantor'
-                    ? 'Valid'
-                    : locationStatus.$1,
-                tone: locationStatus.$2,
-              );
-              final locationInfo = Row(
-                children: [
-                  AppIconTile(
-                    icon: Icons.location_on_outlined,
-                    foreground: locationStatus.$2 == AppStatusTone.danger
-                        ? Theme.of(context).colorScheme.error
-                        : null,
-                    background: locationStatus.$2 == AppStatusTone.danger
-                        ? Theme.of(context).colorScheme.errorContainer
-                        : null,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          locationStatus.$1,
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                        if (location.isNotEmpty)
-                          Text(
-                            location,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-              if (constraints.maxWidth < 300 ||
-                  MediaQuery.textScalerOf(context).scale(1) > 1.35) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [locationInfo, const SizedBox(height: 10), status],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: locationInfo),
-                  const SizedBox(width: 8),
-                  status,
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            value.requiresSelfie
-                ? 'GPS dan selfie diverifikasi server saat catat masuk.'
-                : 'Lokasi GPS diverifikasi server saat transaksi dikirim.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          if (value.gpsRadiusMeters case final radius?)
-            Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.xs),
-              child: Text(
-                'Radius kebijakan ${radius.round()} meter',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          for (final warning in value.warnings)
-            Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.xs),
-              child: Text(
-                warning,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AttendanceRecordCard extends StatelessWidget {
-  const _AttendanceRecordCard({required this.record});
-
-  final AttendanceEntity record;
-
-  @override
-  Widget build(BuildContext context) {
-    final duration = record.checkedInAt == null
-        ? null
-        : (record.checkedOutAt ?? DateTime.now()).difference(
-            record.checkedInAt!,
-          );
-    return AppSurfaceCard(
-      semanticLabel: 'Catatan absensi hari ini dari server',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: [
-              Text('Hari ini', style: Theme.of(context).textTheme.titleMedium),
-              AppStatusChip(
-                label: record.isActive
-                    ? 'Sedang bekerja'
-                    : record.checkedOutAt != null
-                    ? 'Selesai'
-                    : 'Belum masuk',
-                tone: record.isActive || record.checkedOutAt != null
-                    ? AppStatusTone.success
-                    : AppStatusTone.neutral,
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Expanded(
-                child: _TimeValue(
-                  label: 'Masuk',
-                  value: _time(record.checkedInAt),
-                ),
-              ),
-              Expanded(
-                child: _TimeValue(
-                  label: 'Pulang',
-                  value: _time(record.checkedOutAt),
-                ),
-              ),
-              Expanded(
-                child: _TimeValue(
-                  label: 'Durasi',
-                  value: duration == null
-                      ? 'Belum ada'
-                      : '${duration.inHours}j ${duration.inMinutes.remainder(60)}m',
-                ),
-              ),
-            ],
-          ),
-          if (record.requiresReview) ...[
-            const SizedBox(height: AppSpacing.md),
-            const AppStatusChip(
-              label: 'Menunggu tinjauan',
-              tone: AppStatusTone.warning,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _TimeValue extends StatelessWidget {
-  const _TimeValue({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: Theme.of(context).textTheme.labelMedium),
-      const SizedBox(height: AppSpacing.xxs),
-      Text(value, style: Theme.of(context).textTheme.titleMedium),
-    ],
-  );
 }
 
 class _SelfieCard extends StatelessWidget {
