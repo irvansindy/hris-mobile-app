@@ -99,8 +99,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
               const SizedBox(height: AppSpacing.lg),
               AppSectionHeader(
                 title: _isLeave ? 'Detail cuti' : 'Detail izin',
-                description:
-                    'Semua tanggal dan status akhir divalidasi server.',
+                description: 'Tanggal dan status akhir divalidasi sistem.',
               ),
               const SizedBox(height: AppSpacing.md),
               if (_isLeave)
@@ -112,8 +111,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
                   error: (_, _) => AppStateView(
                     kind: AppViewStateKind.error,
                     title: 'Jenis cuti gagal dimuat',
-                    message:
-                        'Form belum dapat dikirim tanpa jenis cuti server.',
+                    message: 'Form belum dapat dikirim tanpa jenis cuti aktif.',
                     actionLabel: 'Coba lagi',
                     onAction: () => ref.invalidate(leaveTypesProvider(session)),
                   ),
@@ -121,8 +119,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
                       ? const AppStateView(
                           kind: AppViewStateKind.empty,
                           title: 'Jenis cuti belum tersedia',
-                          message:
-                              'Server tidak mengembalikan jenis cuti aktif.',
+                          message: 'Belum ada jenis cuti aktif untuk akun ini.',
                         )
                       : DropdownButtonFormField<String>(
                           initialValue: _type,
@@ -218,7 +215,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
               if (_range != null) ...[
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  'Estimasi ${_workingDays(_range!)} hari kerja Senin sampai Jumat. Hari libur dan hasil akhir ditentukan server.',
+                  'Estimasi ${_workingDays(_range!)} hari kerja Senin sampai Jumat. Hari libur dan hasil akhir ditentukan sistem.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -377,7 +374,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Kirim pengajuan?'),
         content: Text(
-          '${_date(_range!.start)} sampai ${_date(_range!.end)}. Setelah dikirim, status mengikuti keputusan server.',
+          '${_date(_range!.start)} sampai ${_date(_range!.end)}. Setelah dikirim, status mengikuti proses persetujuan.',
         ),
         actions: [
           TextButton(
@@ -418,7 +415,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
       ref.invalidate(requestPageProvider);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pengajuan ${result.id} tersimpan di server.')),
+        SnackBar(content: Text('Pengajuan ${result.id} berhasil disimpan.')),
       );
       Navigator.pop(context, result.id);
     } on ApiException catch (error) {

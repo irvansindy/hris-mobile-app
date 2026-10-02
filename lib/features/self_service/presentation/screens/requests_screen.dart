@@ -102,7 +102,7 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
         children: [
           const AppPageHeader(
             title: 'Pengajuan',
-            subtitle: 'Status terbaru dari server',
+            subtitle: 'Status pengajuan terbaru',
           ),
           const SizedBox(height: 18),
           AppStateView(
@@ -125,12 +125,12 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
         children: [
           AppPageHeader(
             title: 'Pengajuan',
-            subtitle: 'Status terbaru dari server',
+            subtitle: 'Status pengajuan terbaru',
           ),
           SizedBox(height: 18),
           AppStateView.loading(
             title: 'Memuat pengajuan',
-            message: 'Mengambil status terbaru dari server.',
+            message: 'Mengambil status pengajuan terbaru.',
           ),
         ],
       );
@@ -152,6 +152,7 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
         .where((item) => item.status == RequestStatus.pending)
         .length;
     final completed = page.items.length - pending;
+    final completePage = page.totalPages <= 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -159,13 +160,17 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
         AppPageHeader(
           key: const ValueKey('requests-header'),
           title: 'Pengajuan',
-          subtitle: '$pending aktif · $completed selesai',
+          subtitle: completePage
+              ? '$pending aktif · $completed selesai'
+              : '${page.total} pengajuan · halaman ${page.page} dari ${page.totalPages}',
         ),
         const SizedBox(height: 18),
         _RequestSummaryActions(
           key: const ValueKey('requests-summary-actions'),
           canCreateLeave: canCreateLeave,
-          pendingCount: pending,
+          pendingLabel: completePage
+              ? '$pending perlu approval'
+              : '$pending menunggu di halaman ini',
           onCreate: () => _showCreateMenu(canCreateLeave, canCreateOvertime),
           onPending: () =>
               setState(() => _status = _RequestStatusFilter.pending),
@@ -367,31 +372,27 @@ class _RequestFilterPill extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      child: IntrinsicWidth(
-        child: SizedBox(
-          height: 44,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-              child: Center(
-                child: Container(
-                  key: ValueKey('request-filter-$label'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: selected ? colors.primary : colors.surface,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
-                  child: Text(
-                    label,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: selected ? colors.onPrimary : colors.onSurface,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    ),
+      child: SizedBox(
+        height: 44,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            child: Align(
+              widthFactor: 1,
+              child: Container(
+                key: ValueKey('request-filter-$label'),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 7),
+                decoration: BoxDecoration(
+                  color: selected ? colors.primary : colors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: selected ? colors.onPrimary : colors.onSurface,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
               ),
@@ -468,13 +469,13 @@ class _RequestSummaryActions extends StatelessWidget {
   const _RequestSummaryActions({
     super.key,
     required this.canCreateLeave,
-    required this.pendingCount,
+    required this.pendingLabel,
     required this.onCreate,
     required this.onPending,
   });
 
   final bool canCreateLeave;
-  final int pendingCount;
+  final String pendingLabel;
   final VoidCallback onCreate;
   final VoidCallback onPending;
 
@@ -490,7 +491,7 @@ class _RequestSummaryActions extends StatelessWidget {
     final pending = _RequestActionCard(
       icon: Icons.schedule_rounded,
       title: 'Menunggu',
-      subtitle: '$pendingCount perlu approval',
+      subtitle: pendingLabel,
       onTap: onPending,
     );
     return LayoutBuilder(
@@ -680,20 +681,21 @@ class RequestDetailScreen extends ConsumerWidget {
           children: [
             const AppDetailHeader(
               title: 'Detail pengajuan',
-              subtitle: 'Status terbaru dari server',
+              subtitle: 'Status pengajuan terbaru',
             ),
             const SizedBox(height: AppSpacing.lg),
             state.when(
               loading: () => initial == null
                   ? const AppStateView.loading(
                       title: 'Memuat detail',
-                      message: 'Mengambil status terbaru dari server.',
+                      message: 'Mengambil status pengajuan terbaru.',
                     )
                   : _RequestDetailSheet(item: initial!),
               error: (_, _) => AppStateView(
                 kind: AppViewStateKind.error,
                 title: 'Detail gagal dimuat',
-                message: 'Data awal tetap aman. Coba muat ulang status server.',
+                message:
+                    'Data awal tetap aman. Coba muat ulang status terbaru.',
                 actionLabel: 'Coba lagi',
                 onAction: () => ref.invalidate(
                   leaveRequestDetailProvider((session: session, id: id)),
@@ -751,7 +753,7 @@ class _RequestDetailSheetState extends ConsumerState<_RequestDetailSheet> {
       builder: (context) => AlertDialog(
         title: const Text('Batalkan pengajuan?'),
         content: const Text(
-          'Server akan menentukan apakah pengajuan ini masih dapat dibatalkan.',
+          'Sistem akan memeriksa apakah pengajuan ini masih dapat dibatalkan.',
         ),
         actions: [
           TextButton(
@@ -776,7 +778,7 @@ class _RequestDetailSheetState extends ConsumerState<_RequestDetailSheet> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Pengajuan ${widget.item.id} dibatalkan di server.'),
+          content: Text('Pengajuan ${widget.item.id} berhasil dibatalkan.'),
         ),
       );
       if (widget.closeOnSuccess) Navigator.pop(context);
@@ -821,8 +823,7 @@ class _RequestDetailContent extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(item.dateRange),
-              if (item.totalDays case final days?)
-                Text('$days hari menurut server'),
+              if (item.totalDays case final days?) Text('$days hari kerja'),
               if (item.reason case final reason?) ...[
                 const SizedBox(height: AppSpacing.md),
                 Text('Alasan', style: Theme.of(context).textTheme.labelLarge),
@@ -856,7 +857,7 @@ class _RequestDetailContent extends StatelessWidget {
               _TimelineRow(
                 label: status.$1,
                 detail: item.approvedAt == null
-                    ? 'Status terbaru dari server'
+                    ? 'Status pengajuan terbaru'
                     : _date(item.approvedAt!),
                 complete: item.status != RequestStatus.pending,
               ),
