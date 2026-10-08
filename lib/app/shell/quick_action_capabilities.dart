@@ -55,8 +55,8 @@ final quickActionCapabilitiesProvider = Provider<List<QuickActionCapability>>((
     QuickActionCapability(
       label: 'Slip gaji',
       icon: Icons.lock_outline_rounded,
-      endpointAvailable: false,
-      route: null,
+      endpointAvailable: true,
+      route: '/payroll',
       requiredPermission: 'payroll:read',
     ),
   ];

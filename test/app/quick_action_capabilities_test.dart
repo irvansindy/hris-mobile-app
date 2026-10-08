@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hrm_app/app/shell/quick_action_capabilities.dart';
 import 'package:hrm_app/core/network/request_context.dart';
@@ -58,5 +59,46 @@ void main() {
     );
 
     expect(visibleCount, 1);
+  });
+
+  testWidgets('payroll quick action is available only with payroll read', (
+    tester,
+  ) async {
+    late List<String> labels;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          quickActionCapabilitiesProvider.overrideWithValue(const [
+            QuickActionCapability(
+              label: 'Slip gaji',
+              icon: Icons.lock_outline_rounded,
+              endpointAvailable: true,
+              route: '/payroll',
+              requiredPermission: 'payroll:read',
+            ),
+          ]),
+        ],
+        child: MaterialApp(
+          home: Consumer(
+            builder: (context, ref, _) {
+              labels = buildAvailableQuickActions(
+                context: context,
+                requestContext: const RequestContext(
+                  userId: 'user-1',
+                  employeeId: 'employee-1',
+                  activeCompanyId: 'company-1',
+                  companyScope: ['company-1'],
+                  permissions: ['payroll:read'],
+                ),
+                capabilities: ref.watch(quickActionCapabilitiesProvider),
+              ).map((item) => item.label).toList();
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(labels, ['Slip gaji']);
   });
 }

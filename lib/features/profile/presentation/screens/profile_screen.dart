@@ -7,6 +7,7 @@ import 'package:hrm_app/core/widgets/app_components.dart';
 import 'package:hrm_app/core/widgets/app_state_view.dart';
 import 'package:hrm_app/features/profile/profile_providers.dart';
 import 'package:hrm_app/core/network/api_exception.dart';
+import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/core/services/app_metadata.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -16,18 +17,21 @@ class ProfileScreen extends ConsumerWidget {
     required this.onSignOut,
     required this.isDarkMode,
     this.onOpenAccountSecurity,
+    this.onOpenPayroll,
   });
 
   final VoidCallback onThemeToggle;
   final VoidCallback onSignOut;
   final bool isDarkMode;
   final VoidCallback? onOpenAccountSecurity;
+  final VoidCallback? onOpenPayroll;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final employee = ref.watch(profileControllerProvider);
     final demoTools = ref.watch(demoToolsBuilderProvider);
     final load = ref.watch(profileLoadStateProvider);
+    final requestContext = ref.watch(requestContextProvider);
     final version = ref.watch(appVersionProvider);
     final darkMode = Theme.of(context).brightness == Brightness.dark;
     final identity = [
@@ -168,6 +172,35 @@ class ProfileScreen extends ConsumerWidget {
                   message:
                       'Slip gaji, kontrak, dan sertifikat akan muncul setelah endpoint dokumen terintegrasi.',
                 ),
+                if (onOpenPayroll != null &&
+                    requestContext?.hasPermission('payroll:read') == true) ...[
+                  const SizedBox(height: 10),
+                  AppSurfaceCard(
+                    key: const ValueKey('profile-payslip'),
+                    onTap: onOpenPayroll,
+                    semanticLabel: 'Buka slip gaji',
+                    child: const ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: 52),
+                      child: Row(
+                        children: [
+                          AppIconTile(icon: Icons.receipt_long_outlined),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Slip gaji'),
+                                SizedBox(height: 2),
+                                Text('Buka dengan PIN pribadi'),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.chevron_right_rounded),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 const AppSectionLabel('Pengaturan'),
                 if (demoTools != null) ...[

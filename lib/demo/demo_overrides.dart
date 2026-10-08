@@ -9,6 +9,7 @@ import 'package:hrm_app/core/services/location_service.dart';
 import 'package:hrm_app/demo/demo_app.dart';
 import 'package:hrm_app/demo/demo_store.dart';
 import 'package:hrm_app/demo/demo_design_repositories.dart';
+import 'package:hrm_app/demo/demo_payroll_repository.dart';
 import 'package:hrm_app/features/calendar/calendar_dependencies.dart';
 import 'package:hrm_app/demo/demo_repositories.dart';
 import 'package:hrm_app/features/authentication/authentication_dependencies.dart';
@@ -19,6 +20,7 @@ import 'package:hrm_app/features/dashboard/dashboard_providers.dart';
 import 'package:hrm_app/features/self_service/self_service_dependencies.dart';
 import 'package:hrm_app/features/self_service/self_service_providers.dart';
 import 'package:hrm_app/features/profile/profile_dependencies.dart';
+import 'package:hrm_app/features/payroll/payroll_dependencies.dart';
 
 List<Override> demoOverrides(
   DemoStore store, {
@@ -49,6 +51,7 @@ List<Override> demoOverrides(
     locationServiceProvider.overrideWithValue(DemoLocation()),
     profileRepositoryProvider.overrideWithValue(DemoDesignProfile()),
     calendarRepositoryProvider.overrideWithValue(DemoDesignCalendar()),
+    payrollRepositoryProvider.overrideWithValue(DemoPayrollRepository()),
     dioProvider.overrideWith((ref) => _offlineDio(ref)),
     featureDioProvider.overrideWith((ref) => _offlineDio(ref)),
     demoToolsBuilderProvider.overrideWith(
