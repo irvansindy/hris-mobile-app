@@ -20,6 +20,7 @@ import 'package:hrm_app/features/authentication/presentation/screens/change_pass
 import 'package:hrm_app/features/authentication/presentation/screens/employee_access_unavailable_screen.dart';
 import 'package:hrm_app/features/authentication/presentation/screens/session_splash_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hrm_app/app/providers/push_lifecycle.dart';
 
 export 'package:hrm_app/app/shell/main_shell.dart' show MainShell;
 
@@ -56,6 +57,7 @@ class HrmsApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(pushLifecycleProvider);
     final themeMode = ref.watch(themeControllerProvider);
     final featureSession = ref.watch(featureSessionProvider);
     final router = ref.watch(appRouterProvider);

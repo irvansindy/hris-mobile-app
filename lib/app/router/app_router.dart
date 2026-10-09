@@ -34,7 +34,10 @@ import 'package:hrm_app/features/self_service/domain/entities/employee_request.d
 final appRouterProvider = Provider<GoRouter>((ref) {
   ref.watch(featureSessionProvider);
   final refresh = _RouterRefresh();
-  ref.listen(authControllerProvider, (_, _) => refresh.notify());
+  var alive = true;
+  final authSubscription = ref.listen(authControllerProvider, (_, _) {
+    if (alive) refresh.notify();
+  });
 
   final rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
   final scrollControllers = List.generate(4, (_) => ScrollController());
@@ -250,6 +253,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
   ref.onDispose(() {
+    alive = false;
+    authSubscription.close();
     router.dispose();
     refresh.dispose();
     for (final controller in scrollControllers) {

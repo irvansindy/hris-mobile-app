@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hrm_app/core/config/app_config.dart';
+import 'package:hrm_app/features/notifications/push/push_providers.dart';
 import 'package:hrm_app/core/errors/result.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/storage/preferences.dart';
@@ -34,6 +36,7 @@ void main() {
       final preferences = await SharedPreferences.getInstance();
       final container = ProviderContainer(
         overrides: [
+          pushModeProvider.overrideWithValue(PushMode.disabled),
           sharedPreferencesProvider.overrideWithValue(preferences),
           authRepositoryProvider.overrideWithValue(_Repository()),
           dashboardRepositoryProvider.overrideWith((ref) {
