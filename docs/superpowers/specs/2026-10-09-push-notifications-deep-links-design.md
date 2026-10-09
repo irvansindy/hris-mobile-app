@@ -1,7 +1,17 @@
 # Tahap 6: Push Notification dan Deep Link
 
 Tanggal: 9 Oktober 2026
-Status: rancangan teknis untuk review, belum diimplementasikan
+Status: disetujui pengguna dengan revisi Firebase dummy pada 9 Oktober 2026; belum diimplementasikan
+
+## Revisi yang Disetujui: Firebase Dummy Terlebih Dahulu
+
+Pengguna belum menerima konfigurasi Firebase dari partner. Implementasi tahap ini menggunakan adapter push dummy untuk debug dan fake adapter untuk test, tanpa key palsu, Firebase initialization, atau pengiriman push nyata. `PUSH_MODE` memakai `disabled` (default) atau `dummy` (debug-only). Build release/profile menolak mode dummy. Demo memakai dummy lokal; presentation utama tetap sama.
+
+Registration dummy memakai repository in-memory sehingga token contoh tidak pernah dikirim ke backend. Repository Dio tetap dibuat dan diuji dengan mocked HTTP untuk memverifikasi kontrak nyata. Inbox production tetap memakai repository server yang ada; simulator debug dengan production data hanya mengirim petunjuk ID yang diverifikasi melalui inbox akun aktif.
+
+Simulator menyediakan event foreground, tap/background, initial/terminated, permission denied, token rotation, dan registration failure. Semua diberi label simulasi; initial/terminated mensimulasikan urutan coordinator dan bukan perilaku OS. Token dummy hanya di memori, tidak menyerupai kredensial partner. State reset ketika sesi berubah. Firebase adapter nyata, bootstrap Firebase, APNs, serta permission OS/delivery nyata ditunda sampai konfigurasi tersedia.
+
+Bagian di bawah menjelaskan arsitektur target dan gate live. Ketentuan `ENABLE_PUSH` pada rancangan awal digantikan `PUSH_MODE` untuk pekerjaan sekarang; adapter Firebase nyata belum masuk deliverable dummy.
 
 ## Tujuan dan Cakupan
 
@@ -51,7 +61,7 @@ Lokasi perubahan utama: `lib/features/notifications/`, `lib/app/router/notificat
 
 ## Bootstrap, Permission, dan Identitas Instalasi
 
-Tambahkan opt-in `ENABLE_PUSH`, default false sampai konfigurasi Firebase tersedia. Demo selalu menonaktifkan Firebase meskipun flag true. Jika enabled, bootstrap menggunakan konfigurasi Firebase resmi untuk environment yang dipilih. Kegagalan initialization tidak menggagalkan login atau inbox, tetapi status push harus menampilkan bahwa push belum aktif.
+Pada pekerjaan sekarang, bootstrap memilih adapter disabled/dummy melalui `PUSH_MODE` tanpa menginisialisasi Firebase. Demo selalu menonaktifkan koneksi Firebase. Pada aktivasi nyata berikutnya, bootstrap harus menggunakan konfigurasi Firebase resmi untuk environment yang dipilih; initialization failure tidak menggagalkan login/inbox dan status harus menunjukkan push belum aktif.
 
 Minta permission setelah sesi login siap, bukan ketika splash/login terbuka. Permission denied tidak diminta berulang pada setiap refresh. Tampilkan status ringkas di inbox beserta aksi mencoba aktivasi kembali setelah pengguna mengubah izin. Gunakan provisional/authorized sesuai status SDK; jangan menyatakan registration aktif sebelum backend menerima POST.
 
@@ -104,7 +114,7 @@ Test otomatis wajib mencakup:
 
 - POST/DELETE contract, batas payload, JSON body DELETE, mapping error, dan idempotency.
 - Installation ID stabil pada restart/logout dan terpisah per environment.
-- Demo/disabled tidak memanggil Firebase; initialization failure tidak memblokir inbox/login.
+- Demo/dummy/disabled tidak memanggil Firebase atau mengirim token dummy ke backend; adapter failure tidak memblokir inbox/login.
 - Login/restore, permission denied, token rotation, duplicate event, dan registration failure/retry.
 - Race register/logout/login akun lain, callback lama, pending intent, dan company switch.
 - Inbox page 1/2, limit tetap 50, metadata, dedup, retry load-more, read/delete rollback.
@@ -116,7 +126,7 @@ Fake tests membuktikan coordinator/routing, bukan delivery FCM atau perilaku OS.
 ## Urutan Implementasi Setelah Review
 
 1. Kontrak repository registration, installation identity, dan pagination inbox.
-2. Adapter Firebase/fake serta bootstrap opt-in tanpa mengubah demo.
+2. Adapter dummy/fake serta bootstrap debug-only; Firebase nyata ditunda tanpa key palsu.
 3. Coordinator session-aware, rotation, dan cleanup logout terurut.
 4. Tap resolver terverifikasi dan integrasi routing/inbox status.
 5. Regression, review, build, report otomatis, dan checklist acceptance live terpisah.
