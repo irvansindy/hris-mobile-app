@@ -115,6 +115,7 @@ void main() {
     'pdf-magic',
     'pdf-content-type',
     'pdf-too-large',
+    'pdf-content-type-prefix',
   ]) {
     test('rejects unsafe PDF response: $defect', () async {
       final dio = Dio()..httpClientAdapter = _PayrollAdapter(defect: defect);
@@ -129,10 +130,46 @@ void main() {
       );
     });
   }
+
+  for (final timestamp in [
+    '2026-10-08T10:15:00',
+    '2026-02-30T10:15:00Z',
+    'invalid',
+  ]) {
+    test('rejects unsafe unlock expiry $timestamp', () async {
+      final dio = Dio()..httpClientAdapter = _PayrollAdapter(expiry: timestamp);
+      addTearDown(dio.close);
+      await expectLater(
+        DioPayrollRepository(dio, () => context).unlock('135791'),
+        throwsFormatException,
+      );
+    });
+  }
+
+  test('preserves JSON unlock error from binary PDF request', () async {
+    final dio = Dio()
+      ..httpClientAdapter = _PayrollAdapter(defect: 'pdf-unlock-error');
+    addTearDown(dio.close);
+    await expectLater(
+      DioPayrollRepository(
+        dio,
+        () => context,
+      ).getPdf(id: 'payslip-1', unlockToken: 'token-1'),
+      throwsA(
+        isA<ApiException>().having(
+          (e) => e.code,
+          'code',
+          'PAYSLIP_UNLOCK_INVALID',
+        ),
+      ),
+    );
+  });
 }
 
 class _PayrollAdapter implements HttpClientAdapter {
-  _PayrollAdapter({this.defect, this.onFetch});
+  _PayrollAdapter({this.defect, this.onFetch, this.expiry});
+
+  final String? expiry;
 
   final String? defect;
   final void Function()? onFetch;
@@ -169,7 +206,7 @@ class _PayrollAdapter implements HttpClientAdapter {
       '/payroll/payslips/pin' => null,
       '/payroll/payslips/my/unlock' => {
         'unlockToken': 'token-1',
-        'expiresAt': '2026-10-08T10:15:00.000Z',
+        'expiresAt': expiry ?? '2026-10-08T10:15:00.000Z',
       },
       '/payroll/payslips/my/payslip-1' => {
         'id': 'payslip-1',
@@ -208,11 +245,27 @@ class _PayrollAdapter implements HttpClientAdapter {
   }
 
   ResponseBody _pdf() {
+    if (defect == 'pdf-unlock-error') {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': false,
+          'code': 'PAYSLIP_UNLOCK_INVALID',
+          'message': 'Unlock expired',
+        }),
+        401,
+        headers: {
+          Headers.contentTypeHeader: ['application/json'],
+        },
+      );
+    }
     var bytes = Uint8List.fromList('%PDF-1.7\nfixture'.codeUnits);
     var contentType = 'application/pdf';
     if (defect == 'pdf-empty') bytes = Uint8List(0);
     if (defect == 'pdf-magic') bytes = Uint8List.fromList('not-pdf'.codeUnits);
     if (defect == 'pdf-content-type') contentType = 'text/plain';
+    if (defect == 'pdf-content-type-prefix') {
+      contentType = 'application/pdf-malicious';
+    }
     if (defect == 'pdf-too-large') bytes = Uint8List(5 * 1024 * 1024 + 1);
     return ResponseBody.fromBytes(
       bytes,

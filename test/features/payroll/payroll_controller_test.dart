@@ -21,6 +21,34 @@ void main() {
   );
   final now = DateTime.utc(2026, 10, 8, 10);
 
+  testWidgets('expiry clears displayed data without another request', (
+    tester,
+  ) async {
+    final vault = PayslipUnlockVault();
+    final controller = PayrollController(
+      repository: _Payroll(
+        grant: PayslipUnlockGrant(
+          token: 'short',
+          expiresAt: now.add(const Duration(seconds: 1)),
+        ),
+      ),
+      vault: vault,
+      context: () => context,
+      isCurrent: () => true,
+      now: () => now,
+    );
+    addTearDown(controller.dispose);
+    await controller.unlock('135791');
+    await controller.loadDetail('payslip-1');
+    await controller.loadPdf('payslip-1');
+    final bytes = controller.state.pdf!.bytes;
+    await tester.pump(const Duration(seconds: 2));
+    expect(controller.state.detail, isNull);
+    expect(controller.state.pdf, isNull);
+    expect(vault.isEmpty, isTrue);
+    expect(bytes.every((byte) => byte == 0), isTrue);
+  });
+
   test('loads, sets PIN, unlocks, reads detail and PDF, then locks', () async {
     final repo = _Payroll();
     final vault = PayslipUnlockVault();
@@ -48,6 +76,33 @@ void main() {
     expect(vault.isEmpty, isTrue);
     expect(controller.state.detail, isNull);
     expect(controller.state.pdf, isNull);
+  });
+
+  testWidgets('late PDF after expiry is discarded and zeroed', (tester) async {
+    final repo = _Payroll(
+      delayPdf: true,
+      grant: PayslipUnlockGrant(
+        token: 'short',
+        expiresAt: now.add(const Duration(seconds: 1)),
+      ),
+    );
+    final controller = PayrollController(
+      repository: repo,
+      vault: PayslipUnlockVault(),
+      context: () => context,
+      isCurrent: () => true,
+      now: () => now,
+    );
+    addTearDown(controller.dispose);
+    await controller.unlock('135791');
+    final pending = controller.loadPdf('payslip-1');
+    await tester.pump(const Duration(seconds: 2));
+    final bytes = Uint8List.fromList('%PDF-1.7 sensitive'.codeUnits);
+    final pdf = PayslipPdf(bytes: bytes, sourceName: 'test.pdf');
+    repo.pdfCompleter.complete(pdf);
+    expect(await pending, isFalse);
+    expect(controller.state.pdf, isNull);
+    expect(pdf.bytes.every((byte) => byte == 0), isTrue);
   });
 
   test(
@@ -173,6 +228,7 @@ class _Payroll implements PayrollRepository {
     this.unlockError,
     this.detailError,
     this.delayDetail = false,
+    this.delayPdf = false,
     PayslipUnlockGrant? grant,
   }) : grant =
            grant ??
@@ -184,8 +240,10 @@ class _Payroll implements PayrollRepository {
   final Object? unlockError;
   final Object? detailError;
   final bool delayDetail;
+  final bool delayPdf;
   final PayslipUnlockGrant grant;
   final detailCompleter = Completer<PayslipDetail>();
+  final pdfCompleter = Completer<PayslipPdf>();
   var setPinCalls = 0;
 
   final detail = PayslipDetail(
@@ -239,8 +297,10 @@ class _Payroll implements PayrollRepository {
   Future<PayslipPdf> getPdf({
     required String id,
     required String unlockToken,
-  }) async => PayslipPdf(
-    bytes: Uint8List.fromList('%PDF-1.7 fixture'.codeUnits),
-    sourceName: 'payslip-1.pdf',
-  );
+  }) async => delayPdf
+      ? pdfCompleter.future
+      : PayslipPdf(
+          bytes: Uint8List.fromList('%PDF-1.7 fixture'.codeUnits),
+          sourceName: 'payslip-1.pdf',
+        );
 }

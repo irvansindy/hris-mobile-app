@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hrm_app/core/network/api_exception.dart';
 import 'package:hrm_app/core/network/request_context.dart';
@@ -79,6 +81,7 @@ class PayrollController extends StateNotifier<PayrollState> {
   final DateTime Function() _now;
   int _generation = 0;
   bool _disposed = false;
+  Timer? _expiryTimer;
 
   Future<void> load() async {
     final generation = ++_generation;
@@ -145,9 +148,26 @@ class PayrollController extends StateNotifier<PayrollState> {
         submitting: false,
         error: null,
       );
+      _expiryTimer = Timer(grant.expiresAt.difference(_now()), lock);
       return true;
     } catch (error) {
       if (_canPublish(generation)) {
+        if (error is ApiException &&
+            (error.code == 'PAYSLIP_PIN_LOCKED' || error.statusCode == 429)) {
+          state = state.copyWith(
+            pinStatus: PayslipPinStatus(
+              pinSet: true,
+              lockedUntil: _now().add(
+                Duration(seconds: error.retryAfterSeconds ?? 900),
+              ),
+            ),
+          );
+        } else if (error is ApiException &&
+            error.code == 'PAYSLIP_PIN_NOT_SET') {
+          state = state.copyWith(
+            pinStatus: const PayslipPinStatus(pinSet: false),
+          );
+        }
         state = state.copyWith(submitting: false, error: error);
       }
       return false;
@@ -165,10 +185,11 @@ class PayrollController extends StateNotifier<PayrollState> {
         unlockToken: grant.token,
       );
       if (!_canPublish(generation)) return false;
+      if (_grant() == null) return false;
       state = state.copyWith(loading: false, detail: detail, error: null);
       return true;
     } catch (error) {
-      if (_isUnlockInvalid(error)) {
+      if (_canPublish(generation) && _isUnlockInvalid(error)) {
         _lockWithError(error);
       } else if (_canPublish(generation)) {
         state = state.copyWith(loading: false, error: error);
@@ -184,11 +205,18 @@ class PayrollController extends StateNotifier<PayrollState> {
     state = state.copyWith(loading: true, pdf: null, error: null);
     try {
       final pdf = await _repository.getPdf(id: id, unlockToken: grant.token);
-      if (!_canPublish(generation)) return false;
+      if (!_canPublish(generation)) {
+        pdf.bytes.fillRange(0, pdf.bytes.length, 0);
+        return false;
+      }
+      if (_grant() == null) {
+        pdf.bytes.fillRange(0, pdf.bytes.length, 0);
+        return false;
+      }
       state = state.copyWith(loading: false, pdf: pdf, error: null);
       return true;
     } catch (error) {
-      if (_isUnlockInvalid(error)) {
+      if (_canPublish(generation) && _isUnlockInvalid(error)) {
         _lockWithError(error);
       } else if (_canPublish(generation)) {
         state = state.copyWith(loading: false, error: error);
@@ -198,9 +226,12 @@ class PayrollController extends StateNotifier<PayrollState> {
   }
 
   void lock() {
+    _expiryTimer?.cancel();
+    _expiryTimer = null;
     _generation++;
     _vault.clear();
     if (!_disposed) {
+      state.pdf?.bytes.fillRange(0, state.pdf!.bytes.length, 0);
       state = state.copyWith(
         detail: null,
         pdf: null,
@@ -227,8 +258,7 @@ class PayrollController extends StateNotifier<PayrollState> {
   }
 
   void _lockWithError(Object error) {
-    _generation++;
-    _vault.clear();
+    lock();
     if (!_disposed) {
       state = state.copyWith(
         detail: null,
@@ -249,6 +279,8 @@ class PayrollController extends StateNotifier<PayrollState> {
 
   @override
   void dispose() {
+    _expiryTimer?.cancel();
+    state.pdf?.bytes.fillRange(0, state.pdf!.bytes.length, 0);
     _vault.clear();
     _generation++;
     _disposed = true;

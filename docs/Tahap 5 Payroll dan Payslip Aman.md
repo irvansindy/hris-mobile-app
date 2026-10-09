@@ -21,10 +21,10 @@ PDF divalidasi berdasarkan content type, signature, isi, dan batas 5 MB sebelum 
 
 ## Bukti Otomatis
 
-- `rtk dart format --output=none --set-exit-if-changed lib test tool integration_test`: PASS, 260 file, 0 perubahan.
+- `rtk dart format --output=none --set-exit-if-changed lib test tool integration_test`: PASS, 261 file, 0 perubahan.
 - `rtk flutter analyze`: PASS, 0 issue.
-- `rtk flutter test`: PASS, 545 test.
-- Safety, golden, dan resilience payroll: PASS, 48 test.
+- `rtk flutter test`: PASS, 556 test (full suite pada checkout aktif, 2 menit 5 detik).
+- Safety, kontrak API, golden, renderer PDF, dan resilience payroll: PASS dalam full suite.
 - Golden payroll: 12 gambar light/dark pada 320dp dan text scale 200%, sudah diinspeksi.
 - `rtk flutter build apk --debug`: PASS, artifact `build/app/outputs/flutter-apk/app-debug.apk`.
 
@@ -36,6 +36,13 @@ PDF divalidasi berdasarkan content type, signature, isi, dan batas 5 MB sebelum 
 - Decimal string/number, komponen payroll asing, dan daftar tanpa nominal.
 - PDF kosong, signature salah, content type salah, serta ukuran berlebih.
 - Layout light/dark pada Android/iOS fixture, 320/430dp, dan text scale sampai 200%.
+- Expiry otomatis tanpa request baru, PDF terlambat setelah expiry, dan background setelah keluar halaman payroll.
+- Proteksi platform pada PIN/rincian serta nested route; lockout menonaktifkan submit.
+- PDF demo benar-benar dibuka dan dirender satu halaman oleh PDFium.
+
+## Final Review
+
+Temuan kritis dan penting dari review telah ditangani; dua golden lockout diperbarui untuk tombol disabled. Keputusan review, minor yang ditunda, dan batasan integrasi dicatat dalam [Review Payroll dan Payslip Aman](<Review Payroll dan Payslip Aman.md>). Hasil ini berlaku untuk checkout aktif yang masih memuat perubahan tahap sebelumnya; belum membuktikan clean checkout atau remote CI.
 
 ## Blocker Exit Gate Live
 

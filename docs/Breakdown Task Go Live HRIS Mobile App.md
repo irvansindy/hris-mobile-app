@@ -135,7 +135,7 @@ tetap menjadi blocker exit gate.
 - [x] Pisahkan tegas employee unlock dari admin payroll unlock.
 
 Status mobile lokal 9 Oktober 2026: implementasi dan seluruh gate otomatis
-selesai. Analyzer bersih, 545 test lulus, 12 golden payroll telah diinspeksi,
+selesai. Analyzer bersih, 556 test lulus, 12 golden payroll telah diinspeksi,
 dan Android debug build berhasil. Detail bukti dan blocker live tersedia di
 `docs/Tahap 5 Payroll dan Payslip Aman.md`. Exit gate live masih menunggu
 staging HTTPS, akun employee payroll aktif, review security pada perangkat,

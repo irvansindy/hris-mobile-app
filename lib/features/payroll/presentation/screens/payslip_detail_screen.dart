@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hrm_app/core/network/api_exception.dart';
+import 'package:hrm_app/core/security/sensitive_screen.dart';
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
 import 'package:hrm_app/core/widgets/app_state_view.dart';
@@ -25,10 +26,7 @@ class _PayslipDetailScreenState extends ConsumerState<PayslipDetailScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final detail = ref.read(payrollControllerProvider).detail;
-      if (detail?.id != widget.id) {
-        ref.read(payrollControllerProvider.notifier).loadDetail(widget.id);
-      }
+      ref.read(payrollControllerProvider.notifier).loadDetail(widget.id);
     });
   }
 
@@ -36,44 +34,56 @@ class _PayslipDetailScreenState extends ConsumerState<PayslipDetailScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(payrollControllerProvider);
     final detail = state.detail?.id == widget.id ? state.detail : null;
-    return Scaffold(
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.screenHorizontal,
-            18,
-            AppSpacing.screenHorizontal,
-            AppSpacing.lg,
+    return SensitiveScreen(
+      child: Scaffold(
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.screenHorizontal,
+              18,
+              AppSpacing.screenHorizontal,
+              AppSpacing.lg,
+            ),
+            children: [
+              _DetailHeader(onBack: Navigator.of(context).pop, onLock: _lock),
+              const SizedBox(height: AppSpacing.section),
+              if (detail != null && state.error != null)
+                AppStateView(
+                  kind: AppViewStateKind.error,
+                  title: 'PDF gagal dimuat',
+                  message: state.error is ApiException
+                      ? (state.error! as ApiException).message
+                      : 'Dokumen tidak dapat dibuka.',
+                  actionLabel: 'Coba lagi',
+                  onAction: _openPdf,
+                ),
+              if (state.loading && detail == null)
+                const AppStateView.loading(
+                  title: 'Membuka rincian',
+                  message: 'Memverifikasi sesi slip gaji.',
+                )
+              else if (state.error != null && detail == null)
+                AppStateView(
+                  kind: AppViewStateKind.error,
+                  title: 'Rincian terkunci',
+                  message: state.error is ApiException
+                      ? (state.error! as ApiException).message
+                      : 'Rincian tidak dapat dibuka.',
+                )
+              else if (detail != null)
+                _Detail(
+                  detail: detail,
+                  loadingPdf: state.loading,
+                  onOpenPdf: _openPdf,
+                )
+              else
+                const AppStateView(
+                  kind: AppViewStateKind.empty,
+                  title: 'Rincian tidak tersedia',
+                  message: 'Kembali dan masukkan PIN untuk mencoba lagi.',
+                ),
+            ],
           ),
-          children: [
-            _DetailHeader(onBack: Navigator.of(context).pop, onLock: _lock),
-            const SizedBox(height: AppSpacing.section),
-            if (state.loading && detail == null)
-              const AppStateView.loading(
-                title: 'Membuka rincian',
-                message: 'Memverifikasi sesi slip gaji.',
-              )
-            else if (state.error != null && detail == null)
-              AppStateView(
-                kind: AppViewStateKind.error,
-                title: 'Rincian terkunci',
-                message: state.error is ApiException
-                    ? (state.error! as ApiException).message
-                    : 'Rincian tidak dapat dibuka.',
-              )
-            else if (detail != null)
-              _Detail(
-                detail: detail,
-                loadingPdf: state.loading,
-                onOpenPdf: _openPdf,
-              )
-            else
-              const AppStateView(
-                kind: AppViewStateKind.empty,
-                title: 'Rincian tidak tersedia',
-                message: 'Kembali dan masukkan PIN untuk mencoba lagi.',
-              ),
-          ],
         ),
       ),
     );
@@ -92,8 +102,20 @@ class _PayslipDetailScreenState extends ConsumerState<PayslipDetailScreen> {
     if (pdf == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            PayslipPdfScreen(bytes: pdf.bytes, sourceName: pdf.sourceName),
+        builder: (_) => Consumer(
+          builder: (context, ref, _) {
+            final state = ref.watch(payrollControllerProvider);
+            if (!state.unlocked || !identical(state.pdf, pdf)) {
+              return const Scaffold(
+                body: Center(child: Text('Konten slip gaji disembunyikan')),
+              );
+            }
+            return PayslipPdfScreen(
+              bytes: pdf.bytes,
+              sourceName: pdf.sourceName,
+            );
+          },
+        ),
       ),
     );
   }

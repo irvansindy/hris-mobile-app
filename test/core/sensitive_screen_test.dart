@@ -31,4 +31,17 @@ void main() {
     expect(calls.map((call) => call.method), ['setSensitive', 'setSensitive']);
     expect(calls.map((call) => call.arguments), [true, false]);
   });
+
+  test(
+    'nested sensitive screens retain protection until the last exit',
+    () async {
+      const controller = SensitiveScreenController();
+      await controller.enable();
+      await controller.enable();
+      await controller.disable();
+      expect(calls.last.arguments, true);
+      await controller.disable();
+      expect(calls.last.arguments, false);
+    },
+  );
 }

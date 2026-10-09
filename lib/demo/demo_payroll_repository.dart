@@ -126,10 +126,7 @@ class DemoPayrollRepository implements PayrollRepository {
     required String unlockToken,
   }) async {
     _requireGrant(unlockToken);
-    return PayslipPdf(
-      bytes: Uint8List.fromList('%PDF-1.4\n% demo payslip'.codeUnits),
-      sourceName: 'slip-gaji-demo.pdf',
-    );
+    return PayslipPdf(bytes: _demoPdf(), sourceName: 'slip-gaji-demo.pdf');
   }
 
   void _requireGrant(String token) {
@@ -141,4 +138,31 @@ class DemoPayrollRepository implements PayrollRepository {
       );
     }
   }
+}
+
+Uint8List _demoPdf() {
+  const content =
+      'BT /F1 16 Tf 40 760 Td (Slip gaji demo - bukan dokumen payroll resmi) Tj ET';
+  final objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Length ${content.length} >>\nstream\n$content\nendstream',
+  ];
+  final document = StringBuffer('%PDF-1.4\n');
+  final offsets = <int>[0];
+  for (final entry in objects.indexed) {
+    offsets.add(document.length);
+    document.write('${entry.$1 + 1} 0 obj\n${entry.$2}\nendobj\n');
+  }
+  final xref = document.length;
+  document.write('xref\n0 ${offsets.length}\n0000000000 65535 f \n');
+  for (final offset in offsets.skip(1)) {
+    document.write('${offset.toString().padLeft(10, '0')} 00000 n \n');
+  }
+  document.write(
+    'trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n$xref\n%%EOF\n',
+  );
+  return Uint8List.fromList(document.toString().codeUnits);
 }

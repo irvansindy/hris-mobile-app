@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hrm_app/core/network/api_exception.dart';
 import 'package:hrm_app/core/network/request_context.dart';
+import 'package:hrm_app/core/security/sensitive_screen.dart';
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
 import 'package:hrm_app/core/widgets/app_state_view.dart';
 import 'package:hrm_app/features/payroll/domain/payroll_models.dart';
 import 'package:hrm_app/features/payroll/payroll_providers.dart';
 import 'package:hrm_app/features/payroll/presentation/controllers/payroll_controller.dart';
-import 'package:hrm_app/features/payroll/presentation/controllers/payroll_lifecycle_lock.dart';
 import 'package:hrm_app/features/payroll/presentation/screens/payslip_detail_screen.dart';
 
 class PayrollScreen extends ConsumerStatefulWidget {
@@ -19,14 +19,9 @@ class PayrollScreen extends ConsumerStatefulWidget {
 }
 
 class _PayrollScreenState extends ConsumerState<PayrollScreen> {
-  late final PayrollLifecycleLock _lifecycleLock;
-
   @override
   void initState() {
     super.initState();
-    _lifecycleLock = PayrollLifecycleLock(
-      () => ref.read(payrollControllerProvider.notifier).lock(),
-    )..start();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final context = ref.read(requestContextProvider);
@@ -34,12 +29,6 @@ class _PayrollScreenState extends ConsumerState<PayrollScreen> {
         ref.read(payrollControllerProvider.notifier).load();
       }
     });
-  }
-
-  @override
-  void dispose() {
-    _lifecycleLock.stop();
-    super.dispose();
   }
 
   @override
@@ -61,28 +50,30 @@ class _PayrollScreenState extends ConsumerState<PayrollScreen> {
     }
 
     final state = ref.watch(payrollControllerProvider);
-    return Scaffold(
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: ref.read(payrollControllerProvider.notifier).load,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.screenHorizontal,
-              18,
-              AppSpacing.screenHorizontal,
-              AppSpacing.lg,
-            ),
-            children: [
-              _Header(key: const ValueKey('payroll-header')),
-              const SizedBox(height: AppSpacing.section),
-              const _SecurityNote(key: ValueKey('payroll-security-note')),
-              const SizedBox(height: AppSpacing.section),
-              KeyedSubtree(
-                key: const ValueKey('payroll-list'),
-                child: _buildList(state),
+    return SensitiveScreen(
+      child: Scaffold(
+        body: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: ref.read(payrollControllerProvider.notifier).load,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screenHorizontal,
+                18,
+                AppSpacing.screenHorizontal,
+                AppSpacing.lg,
               ),
-            ],
+              children: [
+                _Header(key: const ValueKey('payroll-header')),
+                const SizedBox(height: AppSpacing.section),
+                const _SecurityNote(key: ValueKey('payroll-security-note')),
+                const SizedBox(height: AppSpacing.section),
+                KeyedSubtree(
+                  key: const ValueKey('payroll-list'),
+                  child: _buildList(state),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -127,9 +118,14 @@ class _PayrollScreenState extends ConsumerState<PayrollScreen> {
   Future<void> _open(PayslipSummary summary) async {
     final pinStatus = ref.read(payrollControllerProvider).pinStatus;
     if (pinStatus?.isLockedAt(DateTime.now()) == true) {
+      final minutes =
+          (pinStatus!.lockedUntil!.difference(DateTime.now()).inSeconds / 60)
+              .ceil();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Terlalu banyak percobaan. Coba lagi dalam 15 menit.'),
+        SnackBar(
+          content: Text(
+            'Terlalu banyak percobaan. Coba lagi dalam $minutes menit.',
+          ),
         ),
       );
       return;
@@ -156,6 +152,16 @@ class _PayrollScreenState extends ConsumerState<PayrollScreen> {
         MaterialPageRoute<void>(
           builder: (_) => PayslipDetailScreen(id: summary.id),
         ),
+      );
+    }
+    if (mounted &&
+        ref.read(payrollControllerProvider).pinStatus?.pinSet == false) {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        builder: (_) => const _SetupPinSheet(),
       );
     }
   }
@@ -399,7 +405,11 @@ class _UnlockSheetState extends ConsumerState<_UnlockSheet> {
         ],
         const SizedBox(height: AppSpacing.md),
         FilledButton(
-          onPressed: state.submitting ? null : _submit,
+          onPressed:
+              state.submitting ||
+                  state.pinStatus?.isLockedAt(DateTime.now()) == true
+              ? null
+              : _submit,
           child: const Text('Buka slip gaji'),
         ),
       ],
@@ -409,7 +419,13 @@ class _UnlockSheetState extends ConsumerState<_UnlockSheet> {
   Future<void> _submit() async {
     final controller = ref.read(payrollControllerProvider.notifier);
     final unlocked = await controller.unlock(_pin.text);
-    if (!unlocked) return;
+    if (!unlocked) {
+      if (mounted &&
+          ref.read(payrollControllerProvider).pinStatus?.pinSet == false) {
+        Navigator.of(context).pop(false);
+      }
+      return;
+    }
     final loaded = await controller.loadDetail(widget.payslipId);
     if (loaded && mounted) Navigator.of(context).pop(true);
   }

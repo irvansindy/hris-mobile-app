@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -50,7 +51,9 @@ class DioPayrollRepository implements PayrollRepository {
       }
       return PayslipPinStatus(
         pinSet: json['pinSet']! as bool,
-        lockedUntil: _optionalDate(json['lockedUntil']),
+        lockedUntil: json['lockedUntil'] == null
+            ? null
+            : _securityDate(json['lockedUntil']),
       );
     } on DioException catch (error) {
       throw mapDioException(error);
@@ -95,7 +98,7 @@ class DioPayrollRepository implements PayrollRepository {
       final json = _envelope(response).requireObjectData();
       return PayslipUnlockGrant(
         token: _requiredString(json, 'unlockToken'),
-        expiresAt: _requiredDate(json, 'expiresAt'),
+        expiresAt: _securityDate(json['expiresAt']),
       );
     } on DioException catch (error) {
       throw mapDioException(error);
@@ -142,7 +145,8 @@ class DioPayrollRepository implements PayrollRepository {
       final contentType = response.headers.value(Headers.contentTypeHeader);
       final raw = response.data;
       if (contentType == null ||
-          !contentType.toLowerCase().startsWith('application/pdf') ||
+          contentType.split(';').first.trim().toLowerCase() !=
+              'application/pdf' ||
           raw == null ||
           raw.isEmpty ||
           raw.length > _maxPdfBytes) {
@@ -159,6 +163,23 @@ class DioPayrollRepository implements PayrollRepository {
       }
       return PayslipPdf(bytes: bytes, sourceName: 'payslip-$id.pdf');
     } on DioException catch (error) {
+      final response = error.response;
+      final raw = response?.data;
+      if (raw is List<int> &&
+          raw.length <= 64 * 1024 &&
+          response?.headers
+                  .value(Headers.contentTypeHeader)
+                  ?.split(';')
+                  .first
+                  .trim()
+                  .toLowerCase() ==
+              'application/json') {
+        try {
+          response!.data = jsonDecode(utf8.decode(raw));
+        } on FormatException {
+          // Preserve the HTTP fallback when an error envelope is malformed.
+        }
+      }
       throw mapDioException(error);
     }
   }
@@ -299,6 +320,35 @@ DateTime? _optionalDate(Object? value) {
   final parsed = DateTime.tryParse(value)?.toUtc();
   if (parsed == null) throw const FormatException('Tanggal tidak valid.');
   return parsed;
+}
+
+DateTime _securityDate(Object? value) {
+  if (value is! String) throw const FormatException('Timestamp tidak valid.');
+  final match = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$',
+  ).firstMatch(value);
+  if (match == null) {
+    throw const FormatException('Timestamp wajib memiliki zona waktu.');
+  }
+  final parts = [for (var i = 1; i <= 6; i++) int.parse(match.group(i)!)];
+  final calendar = DateTime.utc(parts[0], parts[1], parts[2]);
+  if (calendar.year != parts[0] ||
+      calendar.month != parts[1] ||
+      calendar.day != parts[2] ||
+      parts[3] > 23 ||
+      parts[4] > 59 ||
+      parts[5] > 59) {
+    throw const FormatException('Timestamp tidak valid.');
+  }
+  final zone = match.group(7)!;
+  if (zone != 'Z' &&
+      (int.parse(zone.substring(1, 3)) > 23 ||
+          int.parse(zone.substring(4)) > 59)) {
+    throw const FormatException('Zona waktu tidak valid.');
+  }
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) throw const FormatException('Timestamp tidak valid.');
+  return parsed.toUtc();
 }
 
 void _validatePin(String pin) {

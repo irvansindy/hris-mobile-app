@@ -55,6 +55,7 @@ class _PayslipPdfScreenState extends State<PayslipPdfScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.bytes.fillRange(0, widget.bytes.length, 0);
     unawaited(_protection.disable());
     super.dispose();
   }

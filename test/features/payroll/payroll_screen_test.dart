@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hrm_app/core/network/api_exception.dart';
@@ -9,6 +8,7 @@ import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/features/payroll/domain/payroll_models.dart';
 import 'package:hrm_app/features/payroll/domain/payroll_repository.dart';
 import 'package:hrm_app/features/payroll/payroll_dependencies.dart';
+import 'package:hrm_app/features/payroll/payroll_providers.dart';
 import 'package:hrm_app/features/payroll/presentation/screens/payroll_screen.dart';
 
 const _context = RequestContext(
@@ -20,6 +20,25 @@ const _context = RequestContext(
 );
 
 void main() {
+  final protectionCalls = <MethodCall>[];
+  setUp(() {
+    protectionCalls.clear();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('hris_mobile/sensitive_screen'),
+          (call) async {
+            protectionCalls.add(call);
+            return null;
+          },
+        );
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('hris_mobile/sensitive_screen'),
+          null,
+        );
+  });
   testWidgets('permission denial does not expose payroll controls', (
     tester,
   ) async {
@@ -48,6 +67,7 @@ void main() {
     await tester.tap(find.text('September 2026'));
     await tester.pumpAndSettle();
     expect(find.text('Masukkan PIN slip gaji'), findsOneWidget);
+    expect(protectionCalls.last.arguments, true);
     await tester.enterText(find.byKey(const ValueKey('payslip-pin')), '135791');
     await tester.tap(find.widgetWithText(FilledButton, 'Buka slip gaji'));
     await tester.pumpAndSettle();
@@ -56,6 +76,45 @@ void main() {
     expect(find.text('Komponen Baru'), findsOneWidget);
     expect(find.textContaining('Rp5.000.000'), findsWidgets);
     expect(find.byType(NavigationBar), findsNothing);
+    expect(protectionCalls.last.arguments, true);
+  });
+
+  testWidgets('PDF failure is visible while detail remains available', (
+    tester,
+  ) async {
+    await _pump(tester, repository: _Payroll(pdfError: true));
+    await tester.tap(find.text('September 2026'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('payslip-pin')), '135791');
+    await tester.tap(find.widgetWithText(FilledButton, 'Buka slip gaji'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Lihat PDF'));
+    await tester.pumpAndSettle();
+    expect(find.text('PDF gagal dimuat'), findsOneWidget);
+    expect(find.text('Rincian slip gaji'), findsOneWidget);
+  });
+
+  testWidgets('background locks retained payroll after leaving its screen', (
+    tester,
+  ) async {
+    await _pump(tester, repository: _Payroll());
+    final element = tester.element(find.byType(PayrollScreen));
+    final container = ProviderScope.containerOf(element);
+    final controller = container.read(payrollControllerProvider.notifier);
+    await controller.unlock('135791');
+    await controller.loadDetail('payslip-1');
+    Navigator.of(element).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('Home')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(PayrollScreen), findsNothing);
+    expect(controller.state.detail, isNotNull);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    expect(controller.state.detail, isNull);
+    expect(controller.state.unlocked, isFalse);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   });
 
   testWidgets('setup PIN requires matching six digits', (tester) async {
@@ -115,6 +174,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('15 menit'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Buka slip gaji'),
+          )
+          .onPressed,
+      isNull,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -163,7 +230,8 @@ Future<void> _pump(
 }
 
 class _Payroll implements PayrollRepository {
-  _Payroll({this.pinSet = true, this.lockout = false});
+  _Payroll({this.pinSet = true, this.lockout = false, this.pdfError = false});
+  final bool pdfError;
 
   bool pinSet;
   final bool lockout;
@@ -236,8 +304,11 @@ class _Payroll implements PayrollRepository {
   Future<PayslipPdf> getPdf({
     required String id,
     required String unlockToken,
-  }) async => PayslipPdf(
-    bytes: Uint8List.fromList('%PDF-1.7 fixture'.codeUnits),
-    sourceName: '$id.pdf',
-  );
+  }) async {
+    if (pdfError) throw const ApiException('Dokumen belum tersedia.');
+    return PayslipPdf(
+      bytes: Uint8List.fromList('%PDF-1.7 fixture'.codeUnits),
+      sourceName: '$id.pdf',
+    );
+  }
 }

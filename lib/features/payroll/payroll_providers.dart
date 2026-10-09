@@ -5,6 +5,7 @@ import 'package:hrm_app/features/payroll/domain/payroll_models.dart';
 import 'package:hrm_app/features/payroll/domain/payslip_unlock_vault.dart';
 import 'package:hrm_app/features/payroll/payroll_dependencies.dart';
 import 'package:hrm_app/features/payroll/presentation/controllers/payroll_controller.dart';
+import 'package:hrm_app/features/payroll/presentation/controllers/payroll_lifecycle_lock.dart';
 
 final payslipUnlockVaultProvider = Provider<PayslipUnlockVault>((ref) {
   ref.watch(featureSessionProvider);
@@ -19,12 +20,15 @@ final payrollControllerProvider =
       if (session.context == null) {
         throw const ApiException('Sesi akun belum tersedia.');
       }
-      return PayrollController(
+      final controller = PayrollController(
         repository: ref.watch(payrollRepositoryProvider),
         vault: ref.watch(payslipUnlockVaultProvider),
         context: () => session.context,
         isCurrent: () => session.isCurrent,
       );
+      final lifecycle = PayrollLifecycleLock(controller.lock)..start();
+      ref.onDispose(lifecycle.stop);
+      return controller;
     });
 
 final payslipListProvider = Provider<List<PayslipSummary>>(
