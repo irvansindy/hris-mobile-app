@@ -6,6 +6,7 @@ import 'package:hrm_app/core/widgets/app_components.dart';
 import 'package:hrm_app/core/widgets/app_state_view.dart';
 import 'package:hrm_app/features/payroll/domain/payroll_models.dart';
 import 'package:hrm_app/features/payroll/payroll_providers.dart';
+import 'package:hrm_app/features/payroll/presentation/screens/payslip_pdf_screen.dart';
 import 'package:intl/intl.dart';
 
 class PayslipDetailScreen extends ConsumerStatefulWidget {
@@ -81,7 +82,11 @@ class _PayslipDetailScreenState extends ConsumerState<PayslipDetailScreen> {
                     : 'Rincian tidak dapat dibuka.',
               )
             else if (detail != null)
-              _Detail(detail: detail)
+              _Detail(
+                detail: detail,
+                loadingPdf: state.loading,
+                onOpenPdf: _openPdf,
+              )
             else
               const AppStateView(
                 kind: AppViewStateKind.empty,
@@ -98,12 +103,32 @@ class _PayslipDetailScreenState extends ConsumerState<PayslipDetailScreen> {
     ref.read(payrollControllerProvider.notifier).lock();
     Navigator.of(context).pop();
   }
+
+  Future<void> _openPdf() async {
+    final controller = ref.read(payrollControllerProvider.notifier);
+    final loaded = await controller.loadPdf(widget.id);
+    if (!loaded || !mounted) return;
+    final pdf = ref.read(payrollControllerProvider).pdf;
+    if (pdf == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            PayslipPdfScreen(bytes: pdf.bytes, sourceName: pdf.sourceName),
+      ),
+    );
+  }
 }
 
 class _Detail extends StatelessWidget {
-  const _Detail({required this.detail});
+  const _Detail({
+    required this.detail,
+    required this.loadingPdf,
+    required this.onOpenPdf,
+  });
 
   final PayslipDetail detail;
+  final bool loadingPdf;
+  final VoidCallback onOpenPdf;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -170,6 +195,12 @@ class _Detail extends StatelessWidget {
               )
               .toList(growable: false),
         ),
+      ),
+      const SizedBox(height: AppSpacing.section),
+      FilledButton.icon(
+        onPressed: loadingPdf ? null : onOpenPdf,
+        icon: const Icon(Icons.picture_as_pdf_outlined),
+        label: Text(loadingPdf ? 'Memuat PDF' : 'Lihat PDF'),
       ),
     ],
   );

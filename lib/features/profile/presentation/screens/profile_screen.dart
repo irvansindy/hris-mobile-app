@@ -179,9 +179,9 @@ class ProfileScreen extends ConsumerWidget {
                     key: const ValueKey('profile-payslip'),
                     onTap: onOpenPayroll,
                     semanticLabel: 'Buka slip gaji',
-                    child: const ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: 52),
-                      child: Row(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 52),
+                      child: const Row(
                         children: [
                           AppIconTile(icon: Icons.receipt_long_outlined),
                           SizedBox(width: 12),

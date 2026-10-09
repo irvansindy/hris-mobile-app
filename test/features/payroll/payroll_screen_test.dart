@@ -87,6 +87,25 @@ void main() {
     expect(repository.setPinCalls, 0);
   });
 
+  testWidgets('opens payslip PDF from the unlocked in-memory response', (
+    tester,
+  ) async {
+    await _pump(tester, repository: _Payroll());
+
+    await tester.tap(find.text('September 2026'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('payslip-pin')), '135791');
+    await tester.tap(find.widgetWithText(FilledButton, 'Buka slip gaji'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Lihat PDF'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('PDF slip gaji'), findsOneWidget);
+    expect(find.text('Bagikan'), findsNothing);
+    expect(find.text('Unduh'), findsNothing);
+  });
+
   testWidgets('lockout remains visible after a rejected PIN', (tester) async {
     await _pump(tester, repository: _Payroll(lockout: true));
     await tester.tap(find.text('September 2026'));
