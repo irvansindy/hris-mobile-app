@@ -245,14 +245,20 @@ class _Notifications implements NotificationRepository {
 
   bool _read = false;
   @override
-  Future<List<NotificationItem>> load({required int limit}) async => [
-    NotificationItem(
-      id: 'fixture-notification',
-      title: 'Fixture informasi',
-      message: 'Fixture, bukan informasi server.',
-      isRead: _read,
-    ),
-  ];
+  Future<NotificationPage> load({int page = 1, int limit = 50}) async =>
+      NotificationPage(
+        page: page,
+        totalPages: 1,
+        total: 1,
+        items: [
+          NotificationItem(
+            id: 'fixture-notification',
+            title: 'Fixture informasi',
+            message: 'Fixture, bukan informasi server.',
+            isRead: _read,
+          ),
+        ],
+      );
   @override
   Future<int> unreadCount() async => _read ? 0 : 1;
   @override

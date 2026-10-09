@@ -33,16 +33,49 @@ class NotificationItem {
       }.contains(action!.toLowerCase());
 }
 
+class NotificationPage {
+  NotificationPage({
+    required List<NotificationItem> items,
+    required this.page,
+    required this.totalPages,
+    required this.total,
+  }) : items = List.unmodifiable(items);
+  final List<NotificationItem> items;
+  final int page;
+  final int totalPages;
+  final int total;
+}
+
 class NotificationInbox {
   const NotificationInbox({
     required this.items,
     required this.limit,
+    required this.page,
+    required this.totalPages,
+    required this.total,
     this.busy = false,
     this.actionError,
   });
   final List<NotificationItem> items;
   final int limit;
+  final int page;
+  final int totalPages;
+  final int total;
   final bool busy;
   final String? actionError;
-  bool get canLoadMore => items.length >= limit;
+  bool get canLoadMore => page < totalPages;
+
+  NotificationInbox copyWith({
+    List<NotificationItem>? items,
+    bool busy = false,
+    String? actionError,
+  }) => NotificationInbox(
+    items: items ?? this.items,
+    limit: limit,
+    page: page,
+    totalPages: totalPages,
+    total: total,
+    busy: busy,
+    actionError: actionError,
+  );
 }

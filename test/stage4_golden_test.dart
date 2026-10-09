@@ -162,23 +162,29 @@ class _Notifications implements NotificationRepository {
   Future<void> delete(String id) async {}
 
   @override
-  Future<List<NotificationItem>> load({required int limit}) async => const [
-    NotificationItem(
-      id: 'fixture-notification-1',
-      title: 'Fixture approval',
-      message: 'Fixture, bukan notifikasi server.',
-      isRead: false,
-      type: 'SUCCESS',
-      action: 'approved',
-      resource: 'leave',
-    ),
-    NotificationItem(
-      id: 'fixture-notification-2',
-      title: 'Fixture informasi',
-      message: 'Fixture untuk regresi tampilan inbox.',
-      isRead: true,
-    ),
-  ];
+  Future<NotificationPage> load({int page = 1, int limit = 50}) async =>
+      NotificationPage(
+        page: page,
+        totalPages: 1,
+        total: 2,
+        items: const [
+          NotificationItem(
+            id: 'fixture-notification-1',
+            title: 'Fixture approval',
+            message: 'Fixture, bukan notifikasi server.',
+            isRead: false,
+            type: 'SUCCESS',
+            action: 'approved',
+            resource: 'leave',
+          ),
+          NotificationItem(
+            id: 'fixture-notification-2',
+            title: 'Fixture informasi',
+            message: 'Fixture untuk regresi tampilan inbox.',
+            isRead: true,
+          ),
+        ],
+      );
   @override
   Future<int> unreadCount() async => 1;
   @override

@@ -57,7 +57,7 @@
 - Ganti `NotificationRepository.load` dengan `Future<NotificationPage> load({int page = 1, int limit = 50})`.
 - Produce `DeviceRegistration({required String installationId, required String platform, required String token, required String idempotencyKey, String? appVersion})`; provider wire selalu `FCM`. Key adalah header, bukan field JSON.
 - Produce `DeviceRegistrationRepository.register(DeviceRegistration registration)` dan `unregister(String installationId, {required String idempotencyKey})`, keduanya `Future<void>`.
-- Produce `InstallationIdentity(SharedPreferences preferences, String namespace).getOrCreate(): String`; random aman, ID hex 32 karakter.
+- Produce `InstallationIdentity(SharedPreferences preferences, String namespace).getOrCreate(): Future<String>`; random aman, ID hex 32 karakter, await persistence sebelum return.
 
 - [ ] Tulis failing tests: page 1/2 dengan limit 50, metadata malformed ditolak, duplicate ID antarpages dedup, page-2 error mempertahankan page-1 dan retry meminta page 2 lagi.
 - [ ] Tulis failing contract tests: register 201 mengirim empat required fields dan `provider: FCM`, DELETE 200 membawa JSON installation ID; installation ID 7/201 karakter serta token 19/4097 ditolak sebelum network; ID stabil sesudah restart/logout dan berbeda namespace.

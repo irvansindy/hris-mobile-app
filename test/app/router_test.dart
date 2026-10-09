@@ -315,13 +315,19 @@ class _Notifications implements NotificationRepository {
 
   int count = 1;
   @override
-  Future<List<NotificationItem>> load({required int limit}) async => [
-    const NotificationItem(
-      id: 'n1',
-      title: 'Fixture pengumuman',
-      isRead: false,
-    ),
-  ];
+  Future<NotificationPage> load({int page = 1, int limit = 50}) async =>
+      NotificationPage(
+        page: page,
+        totalPages: 1,
+        total: 1,
+        items: [
+          const NotificationItem(
+            id: 'n1',
+            title: 'Fixture pengumuman',
+            isRead: false,
+          ),
+        ],
+      );
   @override
   Future<int> unreadCount() async => count;
   @override

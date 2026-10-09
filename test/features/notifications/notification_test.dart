@@ -63,12 +63,12 @@ void main() {
       );
       await tester.tap(find.text('Muat lebih banyak'));
       await tester.pumpAndSettle();
-      expect(repo.loadLimits, [50, 50, 100]);
+      expect(repo.loadLimits, [50, 50, 50]);
       await tester.fling(find.byType(ListView), const Offset(0, 20000), 10000);
       await tester.pumpAndSettle();
       await tester.drag(find.byType(ListView), const Offset(0, 400));
       await tester.pumpAndSettle();
-      expect(repo.loadLimits, [50, 50, 100, 100]);
+      expect(repo.loadLimits, [50, 50, 50, 50]);
       expect(tester.takeException(), isNull);
     },
   );
@@ -80,8 +80,8 @@ void main() {
       addTearDown(dio.close);
       final repo = DioNotificationRepository(dio, _context);
       final items = await repo.load(limit: 100);
-      expect(items.single.isApproval, isTrue);
-      expect(adapter.requests.first.queryParameters, {'limit': 100});
+      expect(items.items.single.isApproval, isTrue);
+      expect(adapter.requests.first.queryParameters, {'page': 1, 'limit': 100});
       expect(await repo.unreadCount(), 3);
       await repo.read(['n1']);
       await repo.readAll();
@@ -325,7 +325,7 @@ class _Repo implements NotificationRepository {
   int readAllCalls = 0;
   Completer<void>? pendingRead;
   @override
-  Future<List<NotificationItem>> load({required int limit}) async {
+  Future<NotificationPage> load({int page = 1, int limit = 50}) async {
     loadLimits.add(limit);
     if (failLoad) {
       throw const ApiException(
@@ -333,16 +333,22 @@ class _Repo implements NotificationRepository {
         code: 'NETWORK_ERROR',
       );
     }
-    return fullPage
+    final items = fullPage
         ? List.generate(
             limit,
             (index) => NotificationItem(
-              id: 'fixture-$index',
+              id: 'fixture-${(page - 1) * limit + index}',
               title: 'Fixture inbox $index',
               isRead: false,
             ),
           )
         : [_item];
+    return NotificationPage(
+      items: items,
+      page: page,
+      total: fullPage ? 100 : 1,
+      totalPages: fullPage ? 2 : 1,
+    );
   }
 
   @override
@@ -396,7 +402,19 @@ class _Adapter implements HttpClientAdapter {
           ]
         : null;
     return ResponseBody.fromString(
-      jsonEncode({'success': defect != 'failure', 'data': data}),
+      jsonEncode({
+        'success': defect != 'failure',
+        'data': data,
+        if (options.path == '/notifications')
+          'meta': {
+            'page': options.queryParameters['page'],
+            'limit': options.queryParameters['limit'],
+            'total': 1,
+            'totalPages': 1,
+            'hasNextPage': false,
+            'hasPreviousPage': false,
+          },
+      }),
       200,
       headers: {
         Headers.contentTypeHeader: ['application/json'],
