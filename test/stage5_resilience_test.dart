@@ -27,6 +27,10 @@ import 'package:hrm_app/features/notifications/domain/entities/notification_item
 import 'package:hrm_app/features/notifications/domain/repositories/notification_repository.dart';
 import 'package:hrm_app/features/notifications/notification_providers.dart';
 import 'package:hrm_app/features/notifications/presentation/screens/notifications_screen.dart';
+import 'package:hrm_app/features/payroll/domain/payroll_models.dart';
+import 'package:hrm_app/features/payroll/domain/payroll_repository.dart';
+import 'package:hrm_app/features/payroll/payroll_dependencies.dart';
+import 'package:hrm_app/features/payroll/presentation/screens/payroll_screen.dart';
 import 'package:hrm_app/features/profile/domain/entities/employee.dart';
 import 'package:hrm_app/features/profile/domain/repositories/profile_repository.dart';
 import 'package:hrm_app/features/profile/presentation/screens/profile_screen.dart';
@@ -65,6 +69,7 @@ void main() {
                   isDarkMode: dark,
                 ),
                 const RequestsScreen(),
+                const PayrollScreen(),
                 const RequestFormScreen(kind: RequestKind.leave),
                 const RequestFormScreen(kind: RequestKind.permission),
                 const LoginScreen(),
@@ -118,6 +123,7 @@ void main() {
                       ),
                       profileRepositoryProvider.overrideWithValue(_Profile()),
                       requestRepositoryProvider.overrideWithValue(_Requests()),
+                      payrollRepositoryProvider.overrideWithValue(_Payroll()),
                       authRepositoryProvider.overrideWithValue(_Auth()),
                       appVersionProvider.overrideWith(
                         (ref) async => 'Fixture build',
@@ -308,4 +314,46 @@ class _Auth implements AuthRepository {
   }) => throw UnsupportedError('Fixture does not change passwords.');
   @override
   Future<void> logout() async {}
+}
+
+class _Payroll implements PayrollRepository {
+  @override
+  Future<List<PayslipSummary>> getPayslips() async => [
+    PayslipSummary(
+      id: 'fixture-payslip',
+      status: 'APPROVED',
+      createdAt: DateTime(2026, 9, 30),
+      locked: true,
+      periodName: 'September 2026',
+      payDate: DateTime(2026, 10, 1),
+    ),
+  ];
+
+  @override
+  Future<PayslipPinStatus> getPinStatus() async =>
+      const PayslipPinStatus(pinSet: true);
+
+  @override
+  Future<void> setPin({
+    required String currentPassword,
+    required String pin,
+  }) async {}
+
+  @override
+  Future<PayslipUnlockGrant> unlock(String pin) async => PayslipUnlockGrant(
+    token: 'fixture-unlock-token',
+    expiresAt: DateTime(2026, 9, 14, 10),
+  );
+
+  @override
+  Future<PayslipDetail> getDetail({
+    required String id,
+    required String unlockToken,
+  }) async => throw UnsupportedError('Fixture does not open payslips.');
+
+  @override
+  Future<PayslipPdf> getPdf({
+    required String id,
+    required String unlockToken,
+  }) async => throw UnsupportedError('Fixture does not open PDFs.');
 }

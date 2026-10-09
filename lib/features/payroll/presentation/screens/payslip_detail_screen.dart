@@ -46,27 +46,7 @@ class _PayslipDetailScreenState extends ConsumerState<PayslipDetailScreen> {
             AppSpacing.lg,
           ),
           children: [
-            Row(
-              children: [
-                IconButton(
-                  tooltip: 'Kembali',
-                  onPressed: Navigator.of(context).pop,
-                  icon: const Icon(Icons.arrow_back_rounded),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    'Rincian slip gaji',
-                    style: Theme.of(context).textTheme.headlineLarge,
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: _lock,
-                  icon: const Icon(Icons.lock_outline_rounded, size: 18),
-                  label: const Text('Kunci'),
-                ),
-              ],
-            ),
+            _DetailHeader(onBack: Navigator.of(context).pop, onLock: _lock),
             const SizedBox(height: AppSpacing.section),
             if (state.loading && detail == null)
               const AppStateView.loading(
@@ -115,6 +95,55 @@ class _PayslipDetailScreenState extends ConsumerState<PayslipDetailScreen> {
         builder: (_) =>
             PayslipPdfScreen(bytes: pdf.bytes, sourceName: pdf.sourceName),
       ),
+    );
+  }
+}
+
+class _DetailHeader extends StatelessWidget {
+  const _DetailHeader({required this.onBack, required this.onLock});
+
+  final VoidCallback onBack;
+  final VoidCallback onLock;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = Text(
+      'Rincian slip gaji',
+      style: Theme.of(context).textTheme.headlineLarge,
+    );
+    final back = IconButton(
+      tooltip: 'Kembali',
+      onPressed: onBack,
+      icon: const Icon(Icons.arrow_back_rounded),
+    );
+    final lock = TextButton.icon(
+      onPressed: onLock,
+      icon: const Icon(Icons.lock_outline_rounded, size: 18),
+      label: const Text('Kunci'),
+    );
+    final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.5;
+    if (largeText) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              back,
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(child: title),
+            ],
+          ),
+          Align(alignment: Alignment.centerRight, child: lock),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        back,
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(child: title),
+        lock,
+      ],
     );
   }
 }
@@ -218,25 +247,38 @@ class _MoneyRow extends StatelessWidget {
   final bool strong;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: Text(label)),
-        const SizedBox(width: AppSpacing.sm),
-        Text(
-          NumberFormat.currency(
-            locale: 'id_ID',
-            symbol: 'Rp',
-            decimalDigits: 0,
-          ).format(value),
-          textAlign: TextAlign.end,
-          style: strong
-              ? Theme.of(context).textTheme.titleSmall
-              : Theme.of(context).textTheme.bodyMedium,
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    final amount = Text(
+      NumberFormat.currency(
+        locale: 'id_ID',
+        symbol: 'Rp',
+        decimalDigits: 0,
+      ).format(value),
+      textAlign: TextAlign.end,
+      style: strong
+          ? Theme.of(context).textTheme.titleSmall
+          : Theme.of(context).textTheme.bodyMedium,
+    );
+    final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.5;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: largeText
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(label),
+                const SizedBox(height: AppSpacing.xxs),
+                Align(alignment: Alignment.centerRight, child: amount),
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: Text(label)),
+                const SizedBox(width: AppSpacing.sm),
+                amount,
+              ],
+            ),
+    );
+  }
 }

@@ -62,12 +62,15 @@ class PayrollController extends StateNotifier<PayrollState> {
     required RequestContext? Function() context,
     required bool Function() isCurrent,
     DateTime Function()? now,
-  }) : _repository = repository,
-       _vault = vault,
-       _context = context,
-       _isCurrent = isCurrent,
-       _now = now ?? DateTime.now,
-       super(const PayrollState());
+  }) : this._(repository, vault, context, isCurrent, now ?? DateTime.now);
+
+  PayrollController._(
+    this._repository,
+    this._vault,
+    this._context,
+    this._isCurrent,
+    this._now,
+  ) : super(const PayrollState());
 
   final PayrollRepository _repository;
   final PayslipUnlockVault _vault;

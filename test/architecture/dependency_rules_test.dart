@@ -117,6 +117,7 @@ void main() {
     const allowed = {
       'package:hrm_app/core/errors/result.dart',
       'package:hrm_app/core/errors/failure.dart',
+      'package:hrm_app/core/network/request_context.dart',
       'package:hrm_app/core/services/location_gateway.dart',
       'package:hrm_app/core/services/selfie_gateway.dart',
     };

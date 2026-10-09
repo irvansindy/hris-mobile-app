@@ -1,7 +1,7 @@
 # Payroll dan Payslip Aman
 
 Tanggal: 8 Oktober 2026  
-Status: Menunggu persetujuan implementasi  
+Status: Implementasi lokal selesai; acceptance live tertunda
 Scope: aplikasi Flutter employee self-service
 
 ## Tujuan
