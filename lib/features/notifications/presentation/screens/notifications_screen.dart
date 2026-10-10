@@ -11,8 +11,13 @@ import 'package:hrm_app/features/notifications/domain/entities/notification_item
 import 'package:hrm_app/features/notifications/notification_providers.dart';
 
 class NotificationsScreen extends ConsumerStatefulWidget {
-  const NotificationsScreen({super.key, this.onOpenResource});
+  const NotificationsScreen({
+    super.key,
+    this.onOpenResource,
+    this.pushStatusPanel,
+  });
   final ValueChanged<NotificationItem>? onOpenResource;
+  final Widget? pushStatusPanel;
   @override
   ConsumerState<NotificationsScreen> createState() =>
       _NotificationsScreenState();
@@ -84,6 +89,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               if (stackedHeader)
                 Align(alignment: Alignment.centerRight, child: readAllButton),
               const SizedBox(height: 16),
+              if (widget.pushStatusPanel != null) widget.pushStatusPanel!,
               Wrap(
                 spacing: 8,
                 runSpacing: 8,

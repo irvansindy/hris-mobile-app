@@ -4,7 +4,34 @@ import 'package:go_router/go_router.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/features/notifications/domain/entities/notification_item.dart';
+import 'package:hrm_app/features/notifications/domain/repositories/notification_repository.dart';
 import 'package:hrm_app/features/notifications/presentation/screens/notifications_screen.dart';
+import 'package:hrm_app/features/notifications/push/push_adapter.dart';
+import 'package:hrm_app/features/notifications/presentation/widgets/push_status_panel.dart';
+
+Future<String> resolvePushLocation(
+  PushEvent event,
+  NotificationRepository repository,
+  bool Function() isCurrent,
+) async {
+  final id = event.notificationId;
+  if (!isCurrent() || !validPushHint(id)) return '/notifications';
+  try {
+    final page = await repository.load(page: 1, limit: 50);
+    if (!isCurrent()) return '/notifications';
+    for (final item in page.items) {
+      if (item.id == id) {
+        return notificationResourceLocation(item) ?? '/notifications';
+      }
+    }
+  } on Object {
+    // Inbox remains the fallback; payloads cannot supply a destination.
+  }
+  return '/notifications';
+}
+
+bool validPushHint(String? value) =>
+    value != null && RegExp(r'^[a-zA-Z0-9_-]{1,200}$').hasMatch(value);
 
 String? notificationResourceLocation(NotificationItem item) {
   final resource = item.resource?.toLowerCase().replaceAll('-', '_');
@@ -27,6 +54,7 @@ class NotificationRoute extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(featureSessionProvider);
     return NotificationsScreen(
+      pushStatusPanel: const PushStatusPanel(),
       onOpenResource: (item) {
         if (!session.isCurrent) return;
         final location = notificationResourceLocation(item);
