@@ -52,6 +52,29 @@ void main() {
     expect(adapter.requests.single.path, '/attendance/me/today');
     expect(result.record.id, 'attendance-1');
     expect(result.context.branchName, 'Kantor Pusat');
+    expect(result.serverTime, DateTime.parse('2026-10-04T01:12:33.000Z'));
+    expect(result.serverDate, '2026-10-04');
+    expect(result.timezone, 'Asia/Jakarta');
+    expect(result.canCheckIn, isFalse);
+    expect(result.canCheckOut, isTrue);
+  });
+
+  test('rejects incomplete or ambiguous today eligibility', () async {
+    for (final defect in [
+      'missing-eligibility',
+      'ambiguous-eligibility',
+      'missing-record',
+      'timezone-less-server-time',
+      'impossible-server-date',
+    ]) {
+      final dio = Dio()..httpClientAdapter = _AttendanceAdapter(defect: defect);
+      addTearDown(dio.close);
+
+      await expectLater(
+        DioAttendanceRemoteDataSource(dio, () => context).getTodayState(),
+        throwsFormatException,
+      );
+    }
   });
 
   test('history sends month and maps pagination metadata', () async {
@@ -76,7 +99,41 @@ void main() {
     expect(result.page, 2);
     expect(result.totalPages, 3);
     expect(result.total, 41);
+    expect(result.hasNextPage, isTrue);
     expect(result.items.single.status, AttendanceStatus.late);
+  });
+
+  test(
+    'history trusts hasNextPage even when totalPages suggests more',
+    () async {
+      final adapter = _AttendanceAdapter(defect: 'history-last-page');
+      final dio = Dio()..httpClientAdapter = adapter;
+      addTearDown(dio.close);
+
+      final result = await DioAttendanceRemoteDataSource(
+        dio,
+        () => context,
+      ).getHistory(month: '2026-09', page: 2, limit: 20);
+
+      expect(result.page, 2);
+      expect(result.totalPages, 3);
+      expect(result.hasNextPage, isFalse);
+    },
+  );
+
+  test('empty history preserves zero totalPages from server', () async {
+    final adapter = _AttendanceAdapter(defect: 'empty-history');
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+
+    final result = await DioAttendanceRemoteDataSource(
+      dio,
+      () => context,
+    ).getHistory(month: '2026-09', page: 1, limit: 20);
+
+    expect(result.items, isEmpty);
+    expect(result.totalPages, 0);
+    expect(result.hasNextPage, isFalse);
   });
 
   test(
@@ -222,30 +279,38 @@ class _AttendanceAdapter implements HttpClientAdapter {
       ('GET', '/attendance/me/today') => {
         'success': true,
         'data': {
-          if (activeRecord)
-            'attendance': {
-              'id': 'attendance-1',
-              'employeeId': '00000000-0000-4000-8000-000000000002',
-              'date': today,
-              'checkIn': today,
-              'status': 'PRESENT',
+          'serverTime': '2026-10-04T01:12:33.000Z',
+          'serverDate': '2026-10-04',
+          'timezone': 'Asia/Jakarta',
+          'record': activeRecord
+              ? {
+                  'id': 'attendance-1',
+                  'employeeId': '00000000-0000-4000-8000-000000000002',
+                  'date': today,
+                  'checkIn': today,
+                  'status': 'PRESENT',
+                }
+              : null,
+          'context': {
+            'branch': {'name': 'Kantor Pusat', 'code': 'HQ'},
+            'schedule': {
+              'isWorkingDay': true,
+              'dayType': 'WORKING_DAY',
+              'workStart': '08:00',
+              'workEnd': '17:00',
             },
-          'branch': {'name': 'Kantor Pusat', 'code': 'HQ'},
-          'schedule': {
-            'isWorkingDay': true,
-            'dayType': 'WORKING_DAY',
-            'workStart': '08:00',
-            'workEnd': '17:00',
+            'policy': {
+              'requiresLocation': true,
+              'requiresSelfie': true,
+              'gpsRadiusMeters': 150,
+              'allowHolidayAttendance': false,
+              'allowWeekendAttendance': false,
+            },
+            'allowedMethods': ['FACE_RECOGNITION'],
+            'warnings': <String>[],
           },
-          'policy': {
-            'requiresLocation': true,
-            'requiresSelfie': true,
-            'gpsRadiusMeters': 150,
-            'allowHolidayAttendance': false,
-            'allowWeekendAttendance': false,
-          },
-          'allowedMethods': ['FACE_RECOGNITION'],
-          'warnings': <String>[],
+          'canCheckIn': !activeRecord,
+          'canCheckOut': activeRecord,
         },
       },
       ('GET', '/attendance/me') => {
@@ -261,7 +326,14 @@ class _AttendanceAdapter implements HttpClientAdapter {
             'officeTimezone': 'Asia/Jakarta',
           },
         ],
-        'meta': {'page': 2, 'limit': 20, 'total': 41, 'totalPages': 3},
+        'meta': {
+          'page': 2,
+          'limit': 20,
+          'total': 41,
+          'totalPages': 3,
+          'hasNextPage': true,
+          'hasPreviousPage': true,
+        },
       },
       ('POST', '/attendance/me/check-in') => {
         'success': true,
@@ -292,8 +364,44 @@ class _AttendanceAdapter implements HttpClientAdapter {
     if (defect == 'malformed-history' && options.path == '/attendance/me') {
       body['data'] = [false];
     }
+    if (defect == 'history-last-page' && options.path == '/attendance/me') {
+      (body['meta'] as Map<String, dynamic>)['hasNextPage'] = false;
+    }
+    if (defect == 'empty-history' && options.path == '/attendance/me') {
+      body['data'] = <Object>[];
+      body['meta'] = {
+        'page': 1,
+        'limit': 20,
+        'total': 0,
+        'totalPages': 0,
+        'hasNextPage': false,
+        'hasPreviousPage': false,
+      };
+    }
     if (defect == 'foreign-employee') {
       _replaceEmployee(body['data'], 'another-employee');
+    }
+    if (defect == 'missing-eligibility' &&
+        options.path == '/attendance/me/today') {
+      (body['data'] as Map<String, dynamic>).remove('canCheckIn');
+    }
+    if (defect == 'ambiguous-eligibility' &&
+        options.path == '/attendance/me/today') {
+      final data = body['data'] as Map<String, dynamic>;
+      data['canCheckIn'] = true;
+      data['canCheckOut'] = true;
+    }
+    if (defect == 'missing-record' && options.path == '/attendance/me/today') {
+      (body['data'] as Map<String, dynamic>).remove('record');
+    }
+    if (defect == 'timezone-less-server-time' &&
+        options.path == '/attendance/me/today') {
+      (body['data'] as Map<String, dynamic>)['serverTime'] =
+          '2026-10-04T01:12:33';
+    }
+    if (defect == 'impossible-server-date' &&
+        options.path == '/attendance/me/today') {
+      (body['data'] as Map<String, dynamic>)['serverDate'] = '2026-02-30';
     }
     return ResponseBody.fromString(
       jsonEncode(body),

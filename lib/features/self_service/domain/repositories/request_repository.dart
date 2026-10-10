@@ -3,6 +3,7 @@ import 'package:hrm_app/features/self_service/domain/entities/request_command.da
 
 abstract class RequestRepository {
   List<EmployeeRequest> get current;
+  String? submissionBlocker(RequestKind kind) => null;
   Future<List<EmployeeRequest>> refresh();
   Future<EmployeeRequestPage> getPage({
     required RequestKind kind,

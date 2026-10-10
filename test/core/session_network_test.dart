@@ -61,7 +61,11 @@ void main() {
           if (path == 'protected') {
             request.response.statusCode = 401;
             request.response.write(
-              jsonEncode({'success': false, 'message': 'expired'}),
+              jsonEncode({
+                'success': false,
+                'code': 'TOKEN_EXPIRED',
+                'message': 'expired',
+              }),
             );
           } else if (path == 'login' || path == 'refresh') {
             final id = path == 'login'
@@ -77,6 +81,8 @@ void main() {
                     'employeeId': 'employee-$id',
                     'companyId': 'company-$id',
                     'companyScope': ['company-$id'],
+                    'roles': <String>[],
+                    'permissions': <String>[],
                   },
                   'tokens': {
                     'accessToken': 'token-$id',

@@ -92,6 +92,102 @@ void main() {
     },
   );
 
+  for (final code in ['PAYROLL_UNLOCK_REQUIRED', 'PAYROLL_REAUTH_FAILED']) {
+    _localTest('payroll 401 $code never refreshes or logs out', () async {
+      final fixture = await _Server.start();
+      fixture.protectedErrorCode = code;
+
+      await expectLater(
+        fixture.dio.get<dynamic>('/payroll/payslips/fixture'),
+        throwsA(
+          isA<DioException>().having(
+            (error) => error.response?.statusCode,
+            'status',
+            401,
+          ),
+        ),
+      );
+
+      expect(fixture.refreshCalls, 0);
+      expect(await fixture.storage.readAccessToken(), 'old-access');
+      expect(fixture.container.read(sessionInvalidationProvider), 0);
+    });
+  }
+
+  _localTest('401 without a code is not guessed to be refreshable', () async {
+    final fixture = await _Server.start();
+    fixture.protectedErrorCode = null;
+
+    await expectLater(
+      fixture.dio.get<dynamic>('/unknown-auth-error'),
+      throwsA(isA<DioException>()),
+    );
+
+    expect(fixture.refreshCalls, 0);
+    expect(await fixture.storage.readAccessToken(), 'old-access');
+    expect(fixture.container.read(sessionInvalidationProvider), 0);
+  });
+
+  _localTest(
+    'refresh atomically replaces identity and publishes current authority',
+    () async {
+      final fixture = await _Server.start();
+      fixture.refreshUser = {
+        'id': 'A',
+        'employeeId': 'employee-A',
+        'companyId': 'company-B',
+        'companyScope': ['company-B'],
+        'name': 'Updated authority',
+        'email': 'updated@example.test',
+        'roles': ['MANAGER'],
+        'permissions': ['workflow:approve'],
+        'hasGlobalRole': false,
+        'maxRolePriority': 20,
+        'sessionVersion': 7,
+      };
+
+      await fixture.dio.get<dynamic>('/one');
+
+      final stored = await fixture.storage.readSession();
+      expect(stored?['accessToken'], 'new-access');
+      expect(stored?['refreshToken'], 'new-refresh');
+      expect(stored?['roles'], ['MANAGER']);
+      expect(stored?['permissions'], ['workflow:approve']);
+      expect(stored?['companyId'], 'company-B');
+      expect(stored?['sessionVersion'], 7);
+      expect(fixture.container.read(requestContextProvider)?.permissions, [
+        'workflow:approve',
+      ]);
+      expect(
+        fixture.container.read(requestContextProvider)?.activeCompanyId,
+        'company-B',
+      );
+    },
+  );
+
+  _localTest(
+    'logical request keeps correlation id while refresh gets its own id',
+    () async {
+      final fixture = await _Server.start();
+
+      await fixture.dio.get<dynamic>('/one');
+
+      final protected = fixture.requests
+          .where((request) => request.path == '/one')
+          .toList();
+      final refresh = fixture.requests.singleWhere(
+        (request) => request.path == '/auth/refresh',
+      );
+      expect(protected, hasLength(2));
+      expect(protected.first.correlationId, isNotEmpty);
+      expect(protected.last.correlationId, protected.first.correlationId);
+      expect(refresh.correlationId, isNotEmpty);
+      expect(refresh.correlationId, isNot(protected.first.correlationId));
+      expect(refresh.clientType, 'mobile');
+      expect(protected.first.clientType, isNull);
+    },
+  );
+
   _localTest(
     'final retry 401 invalidates once and does not refresh again',
     () async {
@@ -469,6 +565,8 @@ class _Server {
           String? auth,
           String? cookie,
           String? csrf,
+          String? correlationId,
+          String? clientType,
           String query,
           String? key,
         })
@@ -481,6 +579,16 @@ class _Server {
   final lateStarted = Completer<void>();
   final refreshStarted = Completer<void>();
   String? invalidRefresh;
+  String? protectedErrorCode = 'TOKEN_EXPIRED';
+  Map<String, dynamic> refreshUser = const {
+    'id': 'A',
+    'employeeId': 'employee-A',
+    'companyId': 'company-A',
+    'companyScope': ['company-A'],
+    'name': 'Updated employee',
+    'roles': <String>[],
+    'permissions': <String>[],
+  };
   final threeOldRequests = Completer<void>();
   int _oldRequests = 0;
   Dio get dio => container.read(dioProvider);
@@ -569,6 +677,8 @@ class _Server {
       auth: auth,
       cookie: cookie,
       csrf: request.headers.value('x-csrf-token'),
+      correlationId: request.headers.value('x-correlation-id'),
+      clientType: request.headers.value('x-client-type'),
       query: request.uri.query,
       key: request.headers.value('idempotency-key'),
     ));
@@ -608,6 +718,7 @@ class _Server {
           jsonEncode({
             'success': invalidRefresh != 'success-false',
             'data': {
+              'user': refreshUser,
               'tokens': {
                 if (!cookieAuth && invalidRefresh != 'missing-token')
                   'accessToken': invalidRefresh == 'wrong-token-type'
@@ -640,6 +751,8 @@ class _Server {
       request.response.write(
         jsonEncode({
           'success': !isOld && retryStatus == 200,
+          if ((isOld || retryStatus == 401) && protectedErrorCode != null)
+            'code': protectedErrorCode,
           'message': 'Protected response',
           'data': {
             'id': 'A',

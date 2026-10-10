@@ -2,6 +2,20 @@ import 'package:hrm_app/features/calendar/domain/entities/calendar_data.dart';
 import 'package:hrm_app/features/calendar/domain/repositories/calendar_repository.dart';
 import 'package:hrm_app/features/profile/domain/entities/employee.dart';
 import 'package:hrm_app/features/profile/domain/repositories/profile_repository.dart';
+import 'package:hrm_app/features/profile/domain/entities/employee_support.dart';
+import 'package:hrm_app/features/profile/domain/repositories/employee_support_repository.dart';
+
+class DemoEmployeeSupport implements EmployeeSupportRepository {
+  @override
+  Future<EmployeeSupportSnapshot> load() async => const EmployeeSupportSnapshot(
+    reportingLine: ReportingLine(
+      source: 'POSITION_REPORTS_TO',
+      alternateSupervisors: [],
+    ),
+    attachments: [],
+    canReadAttachments: true,
+  );
+}
 
 class DemoDesignProfile implements ProfileRepository {
   @override
@@ -22,7 +36,7 @@ class DemoDesignProfile implements ProfileRepository {
   Future<Employee> refresh() async => currentEmployee;
 }
 
-class DemoDesignCalendar implements CalendarRepository {
+class DemoDesignCalendar extends CalendarRepository {
   @override
   CalendarData get current => _month(DateTime.now().year, DateTime.now().month);
   @override

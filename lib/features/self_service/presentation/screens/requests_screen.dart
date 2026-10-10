@@ -41,18 +41,11 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
     );
     final leaveState = ref.watch(requestPageProvider(leaveQuery));
     final permissionState = ref.watch(requestPageProvider(permissionQuery));
+    final requestContext = ref.watch(requestContextProvider);
     final canCreateLeave =
-        ref
-            .watch(requestContextProvider)
-            ?.permissions
-            .contains('leave:create') ==
-        true;
+        requestContext?.hasPermission('leave:create') == true;
     final canCreateOvertime =
-        ref
-            .watch(requestContextProvider)
-            ?.permissions
-            .contains('attendance:create') ==
-        true;
+        requestContext?.hasPermission('attendance:create') == true;
     return Scaffold(
       body: SafeArea(
         bottom: false,

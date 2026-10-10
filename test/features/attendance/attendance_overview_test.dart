@@ -36,6 +36,7 @@ void main() {
           page: 1,
           totalPages: 2,
           total: 21,
+          hasNextPage: true,
         ),
       ),
     );
@@ -152,6 +153,7 @@ final _completeHistory = AttendanceHistoryPage(
   page: 1,
   totalPages: 1,
   total: 3,
+  hasNextPage: false,
 );
 
 Future<void> _pumpOverview(

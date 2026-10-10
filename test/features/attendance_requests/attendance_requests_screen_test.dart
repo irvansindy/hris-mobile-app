@@ -63,6 +63,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(repository.createdCorrection, isNotNull);
+    expect(repository.createCorrectionCalls, 1);
     expect(
       find.text('Koreksi berhasil dikirim dan menunggu persetujuan.'),
       findsNothing,
@@ -85,6 +86,36 @@ void main() {
     );
   });
 
+  testWidgets('correction retry reuses the same idempotency key', (
+    tester,
+  ) async {
+    final repository = _Repository()
+      ..createCorrectionError = const ApiException(
+        'Respons server terputus.',
+        code: 'NETWORK_ERROR',
+      );
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('create-correction')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('correction-reason')),
+      'Mesin kantor tidak merekam waktu masuk',
+    );
+    await tester.tap(find.text('Koreksi waktu masuk'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('correction-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Coba lagi'), findsOneWidget);
+    await tester.tap(find.text('Coba lagi'));
+    await tester.pumpAndSettle();
+
+    expect(repository.correctionKeys, hasLength(2));
+    expect(repository.correctionKeys.toSet(), hasLength(1));
+  });
+
   testWidgets('correction detail refreshes the selected item from server', (
     tester,
   ) async {
@@ -98,6 +129,40 @@ void main() {
     expect(repository.correctionDetailId, 'correction-1');
     expect(find.text('Detail koreksi'), findsOneWidget);
     expect(find.text('Status server'), findsOneWidget);
+  });
+
+  testWidgets('correction form can submit checkout on the next day', (
+    tester,
+  ) async {
+    final repository = _Repository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('create-correction')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('correction-reason')),
+      'Koreksi shift malam',
+    );
+    await tester.tap(find.text('Koreksi waktu masuk'));
+    await tester.tap(find.text('Koreksi waktu pulang'));
+    await tester.pump();
+
+    final nextDay = find.byKey(const ValueKey('correction-check-out-next-day'));
+    expect(nextDay, findsOneWidget);
+    await tester.ensureVisible(nextDay);
+    await tester.tap(nextDay);
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const ValueKey('correction-submit')));
+    await tester.tap(find.byKey(const ValueKey('correction-submit')));
+    await tester.pumpAndSettle();
+
+    final command = repository.createdCorrection;
+    expect(command, isNotNull);
+    expect(
+      DateUtils.dateOnly(command!.requestedCheckOut!),
+      DateUtils.dateOnly(command.date.add(const Duration(days: 1))),
+    );
   });
 
   testWidgets('overtime form rejects incomplete time without a mutation', (
@@ -183,6 +248,23 @@ void main() {
 
     expect(find.byKey(const ValueKey('create-overtime')), findsNothing);
     expect(find.text('Riwayat lembur tidak tersedia'), findsOneWidget);
+  });
+
+  testWidgets('legacy attendance wildcard exposes overtime actions', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _Repository(),
+        home: const AttendanceRequestsScreen(
+          initialTab: AttendanceRequestTab.overtime,
+        ),
+        permissions: const ['att:*'],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('create-overtime')), findsOneWidget);
   });
 
   for (final dark in [false, true]) {
@@ -311,6 +393,7 @@ class _Repository implements AttendanceRequestRepository {
   List<OvertimeRequest> overtimes = const [];
   Completer<List<AttendanceCorrectionRequest>>? correctionsGate;
   Completer<AttendanceCorrectionRequest>? createCorrectionGate;
+  Object? createCorrectionError;
   Object? overtimesError;
   OvertimePayEstimate pay = const OvertimePayEstimate(
     overtimeId: 'overtime-1',
@@ -325,6 +408,8 @@ class _Repository implements AttendanceRequestRepository {
   CreateOvertimeRequest? createdOvertime;
   OvertimeRequest? payRequest;
   String? correctionDetailId;
+  int createCorrectionCalls = 0;
+  final List<String> correctionKeys = [];
 
   @override
   Future<List<AttendanceCorrectionRequest>> getCorrections({String? status}) =>
@@ -340,7 +425,13 @@ class _Repository implements AttendanceRequestRepository {
   Future<AttendanceCorrectionRequest> createCorrection(
     CreateAttendanceCorrection command,
   ) {
+    createCorrectionCalls += 1;
     createdCorrection = command;
+    correctionKeys.add(command.idempotencyKey);
+    if (createCorrectionError case final error?) {
+      createCorrectionError = null;
+      return Future.error(error);
+    }
     return createCorrectionGate?.future ??
         Future.value(_correction(id: 'correction-created'));
   }

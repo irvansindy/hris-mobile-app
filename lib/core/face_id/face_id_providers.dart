@@ -18,6 +18,10 @@ final demoFaceEnrollmentStoreProvider = Provider<DemoFaceEnrollmentStore>(
   (_) => const DemoFaceEnrollmentStore(PlatformFaceSecureStore()),
 );
 
+final faceTemplateStoreProvider = Provider<FaceTemplateStore>(
+  (_) => const FaceTemplateStore(PlatformFaceSecureStore()),
+);
+
 final demoFaceVerificationLauncherProvider =
     Provider<AttendanceFaceVerificationLauncher>((ref) {
       final store = ref.watch(demoFaceEnrollmentStoreProvider);

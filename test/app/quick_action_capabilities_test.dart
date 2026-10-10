@@ -61,6 +61,50 @@ void main() {
     expect(visibleCount, 1);
   });
 
+  testWidgets('quick actions accept wildcard and legacy permissions', (
+    tester,
+  ) async {
+    late List<String> labels;
+    const context = RequestContext(
+      userId: 'user-1',
+      employeeId: 'employee-1',
+      activeCompanyId: 'company-1',
+      companyScope: ['company-1'],
+      permissions: ['leave:*', 'att:create'],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (buildContext) {
+            labels = buildAvailableQuickActions(
+              context: buildContext,
+              requestContext: context,
+              capabilities: const [
+                QuickActionCapability(
+                  label: 'Ajukan cuti',
+                  icon: Icons.beach_access_outlined,
+                  endpointAvailable: true,
+                  route: '/requests/leave/new',
+                  requiredPermission: 'leave:create',
+                ),
+                QuickActionCapability(
+                  label: 'Klaim lembur',
+                  icon: Icons.more_time_rounded,
+                  endpointAvailable: true,
+                  route: '/attendance/requests',
+                  requiredPermission: 'attendance:create',
+                ),
+              ],
+            ).map((item) => item.label).toList();
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(labels, ['Ajukan cuti', 'Klaim lembur']);
+  });
+
   testWidgets('payroll quick action is available only with payroll read', (
     tester,
   ) async {
@@ -88,7 +132,7 @@ void main() {
                   employeeId: 'employee-1',
                   activeCompanyId: 'company-1',
                   companyScope: ['company-1'],
-                  permissions: ['payroll:read'],
+                  permissions: ['payroll:*'],
                 ),
                 capabilities: ref.watch(quickActionCapabilitiesProvider),
               ).map((item) => item.label).toList();

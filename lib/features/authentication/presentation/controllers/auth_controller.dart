@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hrm_app/core/errors/failure.dart';
 import 'package:hrm_app/core/errors/result.dart';
@@ -23,6 +25,15 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       ref.read(requestContextProvider.notifier).state = null;
       state = const AsyncData(null);
     });
+    ref.listen<AuthSession?>(refreshedAuthSessionProvider, (
+      previous,
+      refreshed,
+    ) {
+      if (refreshed == null || _disposed) return;
+      final currentUserId = _currentSession?.userId;
+      if (currentUserId != null && refreshed.userId != currentUserId) return;
+      state = AsyncData(_setContext(refreshed));
+    });
     ref.onDispose(() {
       _disposed = true;
       _operation++;
@@ -43,6 +54,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     ref.read(authNoticeProvider.notifier).state = null;
     final operation = ++_operation;
     _currentSession = null;
+    ref.read(refreshedSessionProvider.notifier).state = null;
     ref.read(requestContextProvider.notifier).state = null;
     state = const AsyncData(null);
     state = const AsyncLoading();
@@ -90,11 +102,16 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   }
 
   Future<void> logout() async {
+    final session = _currentSession;
     _operation++;
     _currentSession = null;
+    ref.read(refreshedSessionProvider.notifier).state = null;
     ref.read(loginSuccessPendingProvider.notifier).state = false;
     ref.read(requestContextProvider.notifier).state = null;
     state = const AsyncData(null);
+    if (session != null) {
+      unawaited(ref.read(sessionArtifactCleanerProvider)(session));
+    }
     await ref.read(authRepositoryProvider).logout();
   }
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hrm_app/core/localization/app_localizations.dart';
 import 'package:hrm_app/core/errors/result.dart';
 import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/core/services/app_metadata.dart';
@@ -135,8 +135,7 @@ void main() {
                       ),
                       locale: const Locale('id', 'ID'),
                       supportedLocales: const [Locale('id', 'ID')],
-                      localizationsDelegates:
-                          GlobalMaterialLocalizations.delegates,
+                      localizationsDelegates: appLocalizationsDelegates,
                       builder: (context, child) => MediaQuery(
                         data: MediaQuery.of(context).copyWith(
                           textScaler: TextScaler.linear(scale),
@@ -210,7 +209,7 @@ class _Dashboard implements DashboardRepository {
   Future<DashboardSnapshot> refresh() async => current;
 }
 
-class _Calendar implements CalendarRepository {
+class _Calendar extends CalendarRepository {
   @override
   CalendarData get current => CalendarData(
     focusedDate: DateTime(2026, 9, 14),

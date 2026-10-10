@@ -13,6 +13,48 @@ class DioEssRepository implements EssRepository {
   final RequestContext? Function() _context;
 
   @override
+  Future<AssetPage> getAssets({
+    int page = 1,
+    int limit = 20,
+    AssetAssignmentStatus status = AssetAssignmentStatus.active,
+  }) async {
+    final context = _requireContext();
+    if (page < 1 || limit < 1 || limit > 100) {
+      throw const ApiException('Pagination aset tidak valid.');
+    }
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/assets/my',
+        queryParameters: {
+          'status': status.name.toUpperCase(),
+          'page': page,
+          'limit': limit,
+        },
+      );
+      final envelope = ApiEnvelope.fromJson(response.data ?? const {});
+      if (!envelope.success || envelope.data is! List) {
+        throw const FormatException('Daftar aset tidak valid.');
+      }
+      final rawItems = envelope.data! as List;
+      if (rawItems.any((item) => item is! Map)) {
+        throw const FormatException('Daftar aset tidak valid.');
+      }
+      final meta = envelope.meta ?? const <String, dynamic>{};
+      return AssetPage(
+        items: rawItems
+            .cast<Map>()
+            .map((item) => _asset(Map<String, dynamic>.from(item), context))
+            .toList(growable: false),
+        page: _optionalInteger(meta['page']) ?? page,
+        total: _optionalInteger(meta['total']) ?? rawItems.length,
+        hasNextPage: meta['hasNextPage'] == true,
+      );
+    } on DioException catch (error) {
+      throw mapDioException(error);
+    }
+  }
+
+  @override
   Future<LoanSnapshot> getLoans() async {
     final context = _requireContext();
     try {
@@ -87,7 +129,7 @@ class DioEssRepository implements EssRepository {
 
   @override
   Future<List<LoanInstallment>> getLoanInstallments(String id) async {
-    _requireContext();
+    _requirePermission('employee-loan:read');
     _safeId(id);
     try {
       final response = await _dio.get<Map<String, dynamic>>(
@@ -101,7 +143,7 @@ class DioEssRepository implements EssRepository {
 
   @override
   Future<LoanAmortization> getLoanAmortization(String id) async {
-    _requireContext();
+    _requirePermission('employee-loan:read');
     _safeId(id);
     try {
       final response = await _dio.get<Map<String, dynamic>>(
@@ -164,7 +206,7 @@ class DioEssRepository implements EssRepository {
 
   @override
   Future<EwaRequest> createEwa(CreateEwaCommand command) async {
-    final context = _requireContext();
+    final context = _requirePermission('ewa:create');
     if (command.amount <= 0) {
       throw const ApiException('Nominal EWA harus lebih dari nol.');
     }
@@ -189,7 +231,7 @@ class DioEssRepository implements EssRepository {
 
   @override
   Future<EwaRequest> getEwaDetail(String id) async {
-    final context = _requireContext();
+    final context = _requirePermission('ewa:read');
     _safeId(id);
     try {
       final response = await _dio.get<Map<String, dynamic>>('/ewa/$id');
@@ -201,7 +243,7 @@ class DioEssRepository implements EssRepository {
 
   @override
   Future<EwaRequest> cancelEwa(String id) async {
-    final context = _requireContext();
+    final context = _requirePermission('ewa:update');
     _safeId(id);
     try {
       final response = await _dio.post<Map<String, dynamic>>('/ewa/$id/cancel');
@@ -231,7 +273,7 @@ class DioEssRepository implements EssRepository {
           'endDate': end.toUtc().toIso8601String(),
         },
       );
-      final branch = context.permissions.contains('employee:read')
+      final branch = context.hasPermission('employee:read')
           ? await _employeeBranch(context)
           : null;
       return ActivitySnapshot(
@@ -247,7 +289,7 @@ class DioEssRepository implements EssRepository {
 
   @override
   Future<DailyActivity> createActivity(CreateActivityCommand command) async {
-    final context = _requireContext();
+    final context = _requirePermission('daily-activity:create');
     _validateActivity(command.title, command.startTime, command.endTime);
     try {
       final response = await _dio.post<Map<String, dynamic>>(
@@ -276,7 +318,7 @@ class DioEssRepository implements EssRepository {
 
   @override
   Future<DailyActivity> getActivityDetail(String id) async {
-    final context = _requireContext();
+    final context = _requirePermission('daily-activity:read');
     _safeId(id);
     try {
       final response = await _dio.get<Map<String, dynamic>>(
@@ -293,7 +335,7 @@ class DioEssRepository implements EssRepository {
     String id,
     UpdateActivityCommand command,
   ) async {
-    final context = _requireContext();
+    final context = _requirePermission('daily-activity:update');
     _safeId(id);
     _validateActivity(command.title, command.startTime, command.endTime);
     try {
@@ -315,7 +357,7 @@ class DioEssRepository implements EssRepository {
 
   @override
   Future<void> deleteActivity(String id) async {
-    _requireContext();
+    _requirePermission('daily-activity:delete');
     _safeId(id);
     try {
       final response = await _dio.delete<Map<String, dynamic>>(
@@ -408,7 +450,7 @@ class DioEssRepository implements EssRepository {
       );
       final json = _object(response);
       return ReceiptUpload(
-        filePath: _requiredText(json, 'filePath'),
+        referenceUrl: _requiredText(json, 'url'),
         originalName: _requiredText(json, 'originalName'),
       );
     } on DioException catch (error) {
@@ -450,6 +492,18 @@ class DioEssRepository implements EssRepository {
       throw const ApiException('Sesi employee/company belum tersedia.');
     }
     return value!;
+  }
+
+  RequestContext _requirePermission(String permission) {
+    final context = _requireContext();
+    if (!context.hasPermission(permission)) {
+      throw ApiException(
+        'Akun tidak memiliki izin $permission.',
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      );
+    }
+    return context;
   }
 
   Future<EmployeeBranch?> _employeeBranch(RequestContext context) async {
@@ -590,6 +644,29 @@ class DioEssRepository implements EssRepository {
       expenseDate: _requiredDate(json, 'expenseDate'),
       status: _requiredText(json, 'status'),
       description: _text(json, 'description'),
+    );
+  }
+
+  EmployeeAsset _asset(Map<String, dynamic> json, RequestContext context) {
+    _identity(json, context);
+    final rawAsset = json['asset'];
+    if (rawAsset is! Map) {
+      throw const FormatException('Detail aset tidak tersedia.');
+    }
+    final asset = Map<String, dynamic>.from(rawAsset);
+    return EmployeeAsset(
+      assignmentId: _requiredText(json, 'id'),
+      assetId: _requiredText(asset, 'id'),
+      code: _requiredText(asset, 'assetCode'),
+      name: _requiredText(asset, 'name'),
+      status: _requiredText(asset, 'status'),
+      serialNumber: _text(asset, 'serialNumber'),
+      branchId: _text(asset, 'branchId'),
+      assignedAt: _optionalDate(json['assignedAt']),
+      returnedAt: _optionalDate(json['returnedAt']),
+      condition:
+          _text(json, 'conditionAtReturn') ??
+          _text(json, 'conditionAtAssignment'),
     );
   }
 

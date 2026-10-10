@@ -19,7 +19,7 @@ abstract class AttendanceRepository {
       return FailureResult(failure);
     }
     return Success(
-      AttendanceToday(
+      AttendanceToday.derived(
         record: (record as Success<AttendanceEntity>).value,
         context: (context as Success<AttendanceContext>).value,
       ),

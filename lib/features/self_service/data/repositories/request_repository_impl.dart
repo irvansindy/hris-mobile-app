@@ -10,6 +10,12 @@ class RequestRepositoryImpl implements RequestRepository {
   final RequestRemoteDataSource? _remote;
 
   @override
+  String? submissionBlocker(RequestKind kind) =>
+      _remote != null && kind == RequestKind.permission
+      ? 'Kontrak durasi dan upload lampiran izin belum dipastikan backend.'
+      : null;
+
+  @override
   List<EmployeeRequest> get current => _local.readAll();
 
   @override
@@ -37,7 +43,7 @@ class RequestRepositoryImpl implements RequestRepository {
     return EmployeeRequestPage(
       items: items,
       page: 1,
-      totalPages: 1,
+      totalPages: items.isEmpty ? 0 : 1,
       total: items.length,
     );
   }

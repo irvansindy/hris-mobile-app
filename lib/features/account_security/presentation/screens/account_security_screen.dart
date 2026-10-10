@@ -36,14 +36,22 @@ class AccountSecurityScreen extends ConsumerWidget {
             ),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              _PageHeader(onBack: () => Navigator.of(context).maybePop()),
+              _PageHeader(
+                key: const ValueKey('account-security-header'),
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
               const SizedBox(height: AppSpacing.lg),
               _MfaCard(
+                key: const ValueKey('account-security-mfa'),
                 state: mfa,
                 onSetup: () => _setupMfa(context, ref),
                 onDisable: () => _disableMfa(context, ref),
               ),
               const SizedBox(height: AppSpacing.lg),
+              const SizedBox(
+                key: ValueKey('account-security-sessions'),
+                height: 0,
+              ),
               const AppSectionHeader(
                 title: 'Sesi aktif',
                 description:
@@ -156,7 +164,7 @@ class AccountSecurityScreen extends ConsumerWidget {
 }
 
 class _PageHeader extends StatelessWidget {
-  const _PageHeader({required this.onBack});
+  const _PageHeader({super.key, required this.onBack});
 
   final VoidCallback onBack;
 
@@ -197,6 +205,7 @@ class _PageHeader extends StatelessWidget {
 
 class _MfaCard extends StatelessWidget {
   const _MfaCard({
+    super.key,
     required this.state,
     required this.onSetup,
     required this.onDisable,

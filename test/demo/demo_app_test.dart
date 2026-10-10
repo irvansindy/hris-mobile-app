@@ -14,6 +14,10 @@ import 'package:hrm_app/features/dashboard/presentation/screens/home_screen.dart
 import 'package:hrm_app/features/calendar/presentation/screens/calendar_screen.dart';
 import 'package:hrm_app/features/profile/presentation/screens/profile_screen.dart';
 import 'package:hrm_app/core/widgets/app_navigation.dart';
+import 'package:hrm_app/features/account_security/account_security_providers.dart';
+import 'package:hrm_app/features/approvals/approval_dependencies.dart';
+import 'package:hrm_app/features/ess/ess_providers.dart';
+import 'package:hrm_app/features/notifications/notification_providers.dart';
 
 void main() {
   testWidgets(
@@ -108,7 +112,7 @@ void main() {
       await tester.tap(find.text('Profil').last);
       await tester.pumpAndSettle();
       expect(find.byType(ProfileScreen), findsOneWidget);
-      expect(find.text('Pengujian demo · Face ID'), findsOneWidget);
+      expect(find.text('Kelola Face ID'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -133,4 +137,29 @@ void main() {
       dio.close();
     },
   );
+
+  test('secondary features use local demo repositories', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final store = DemoStore(preferences);
+    await store.load();
+    final container = ProviderContainer(overrides: demoOverrides(store));
+    addTearDown(container.dispose);
+
+    final notifications = await container
+        .read(notificationRepositoryProvider)
+        .load(limit: 50);
+    final approvals = await container
+        .read(approvalRepositoryProvider)
+        .getQueue(page: 1);
+    final loans = await container.read(essRepositoryProvider).getLoans();
+    final sessions = await container
+        .read(accountSecurityRepositoryProvider)
+        .loadSessions();
+
+    expect(notifications.items, isNotEmpty);
+    expect(approvals.items, isEmpty);
+    expect(loans.loans, isEmpty);
+    expect(sessions, isEmpty);
+  });
 }

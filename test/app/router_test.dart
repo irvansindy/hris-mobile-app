@@ -360,6 +360,10 @@ AuthSession _managerSession() => const AuthSession(
 
 class _Approvals implements ApprovalRepository {
   @override
+  Future<WorkflowApprovalDetail> getDetail(String instanceId) =>
+      throw UnimplementedError();
+
+  @override
   Future<WorkflowApprovalPage> getQueue({required int page, int limit = 20}) =>
       Future.value(
         WorkflowApprovalPage(
@@ -375,6 +379,7 @@ class _Approvals implements ApprovalRepository {
     required String instanceId,
     required WorkflowApprovalAction action,
     String? comment,
+    String? subjectEmployeeId,
   }) => throw UnimplementedError();
 
   @override

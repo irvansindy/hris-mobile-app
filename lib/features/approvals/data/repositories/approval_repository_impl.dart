@@ -12,14 +12,20 @@ class ApprovalRepositoryImpl implements ApprovalRepository {
       _remote.getQueue(page: page, limit: limit);
 
   @override
+  Future<WorkflowApprovalDetail> getDetail(String instanceId) =>
+      _remote.getDetail(instanceId);
+
+  @override
   Future<void> applyAction({
     required String instanceId,
     required WorkflowApprovalAction action,
     String? comment,
+    String? subjectEmployeeId,
   }) => _remote.applyAction(
     instanceId: instanceId,
     action: action,
     comment: comment,
+    subjectEmployeeId: subjectEmployeeId,
   );
 
   @override

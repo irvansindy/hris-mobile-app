@@ -15,6 +15,8 @@ import 'package:hrm_app/features/attendance/attendance_dependencies.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_command.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_context.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_entity.dart';
+import 'package:hrm_app/features/attendance/domain/entities/attendance_history.dart';
+import 'package:hrm_app/features/attendance/domain/entities/attendance_today.dart';
 import 'package:hrm_app/features/attendance/domain/repositories/attendance_repository.dart';
 import 'package:hrm_app/features/attendance/presentation/screens/attendance_screen.dart';
 
@@ -229,6 +231,106 @@ void main() {
     expect(button.onPressed, isNull);
     expect(repository.clockInCalls, 0);
   });
+
+  testWidgets('server eligibility disables check in even without a record', (
+    tester,
+  ) async {
+    final repository = _Repository(canCheckIn: false);
+    await _pump(tester, repository: repository);
+
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Catat masuk'),
+    );
+    expect(button.onPressed, isNull);
+    expect(repository.clockInCalls, 0);
+  });
+
+  testWidgets('missing open checkout directs the employee to correction', (
+    tester,
+  ) async {
+    final repository = _Repository(
+      active: true,
+      canCheckIn: false,
+      canCheckOut: true,
+      failure: 'No open attendance record found for checkout',
+      failureStatusCode: 404,
+      failureCode: 'NOT_FOUND',
+    );
+    await _pump(tester, repository: repository);
+
+    await tester.tap(find.text('Catat pulang'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kirim'));
+    await tester.pumpAndSettle();
+
+    expect(repository.clockOutCalls, 1);
+    expect(find.text('Ajukan koreksi'), findsOneWidget);
+    expect(find.text('Coba lagi'), findsNothing);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -300));
+    await tester.pumpAndSettle();
+    final button = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('attendance-submit-action')),
+    );
+    expect(button.onPressed, isNull);
+  });
+
+  testWidgets('generic today not found remains retryable', (tester) async {
+    final repository = _Repository(initialNotFound: true);
+    await _pump(tester, repository: repository);
+
+    expect(find.text('Coba lagi'), findsOneWidget);
+    expect(find.text('Ajukan koreksi'), findsNothing);
+  });
+
+  testWidgets('successful punch with failed refresh reports both facts', (
+    tester,
+  ) async {
+    final repository = _Repository(refreshFailsAfterPunch: true);
+    await _pump(tester, repository: repository);
+
+    await tester.tap(find.text('Catat masuk'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kirim'));
+    await tester.pumpAndSettle();
+
+    expect(repository.clockInCalls, 1);
+    expect(find.text('Waktu masuk tercatat di server.'), findsOneWidget);
+    expect(
+      find.text('Absensi tercatat, status belum diperbarui'),
+      findsOneWidget,
+    );
+    expect(find.text('Absensi belum tercatat'), findsNothing);
+  });
+
+  testWidgets('server hasNextPage false disables the next history button', (
+    tester,
+  ) async {
+    final repository = _Repository(
+      history: const AttendanceHistoryPage(
+        items: [
+          AttendanceEntity(
+            id: 'attendance-history-1',
+            userId: 'employee-1',
+            checkedInAt: null,
+            status: AttendanceStatus.onTime,
+            latitude: -6.2,
+            longitude: 106.8,
+          ),
+        ],
+        page: 1,
+        totalPages: 3,
+        total: 41,
+        hasNextPage: false,
+      ),
+    );
+    await _pump(tester, repository: repository);
+
+    await tester.scrollUntilVisible(find.text('Berikutnya'), 300);
+    final next = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Berikutnya'),
+    );
+    expect(next.onPressed, isNull);
+  });
 }
 
 Future<void> _pump(
@@ -314,13 +416,61 @@ class _Repository extends AttendanceRepository {
     this.failure,
     this.requiresSelfie = false,
     this.completed = false,
+    this.active = false,
+    this.canCheckIn,
+    this.canCheckOut,
+    this.failureStatusCode = 400,
+    this.failureCode,
+    this.initialNotFound = false,
+    this.refreshFailsAfterPunch = false,
+    this.history,
   });
 
   final String? failure;
   final bool requiresSelfie;
   final bool completed;
+  final bool active;
+  final bool? canCheckIn;
+  final bool? canCheckOut;
+  final int failureStatusCode;
+  final String? failureCode;
+  final bool initialNotFound;
+  final bool refreshFailsAfterPunch;
+  final AttendanceHistoryPage? history;
   int clockInCalls = 0;
+  int clockOutCalls = 0;
   AttendanceCommand? command;
+  AttendanceEntity? _currentRecord;
+
+  AttendanceEntity get _record =>
+      _currentRecord ??
+      (completed
+          ? AttendanceEntity(
+              id: 'attendance-1',
+              userId: 'employee-1',
+              checkedInAt: DateTime.utc(2026, 9, 12, 1),
+              checkedOutAt: DateTime.utc(2026, 9, 12, 9),
+              status: AttendanceStatus.completed,
+              latitude: -6.2,
+              longitude: 106.8,
+            )
+          : active
+          ? AttendanceEntity(
+              id: 'attendance-1',
+              userId: 'employee-1',
+              checkedInAt: DateTime.utc(2026, 9, 12, 1),
+              status: AttendanceStatus.onTime,
+              latitude: -6.2,
+              longitude: 106.8,
+            )
+          : const AttendanceEntity(
+              id: '',
+              userId: 'employee-1',
+              checkedInAt: null,
+              status: AttendanceStatus.notStarted,
+              latitude: 0,
+              longitude: 0,
+            ));
 
   @override
   Future<Result<AttendanceContext>> getContext() async => Success(
@@ -343,47 +493,91 @@ class _Repository extends AttendanceRepository {
   );
 
   @override
-  Future<Result<AttendanceEntity>> getToday() async => Success(
-    completed
-        ? AttendanceEntity(
-            id: 'attendance-1',
-            userId: 'employee-1',
-            checkedInAt: DateTime.utc(2026, 9, 12, 1),
-            checkedOutAt: DateTime.utc(2026, 9, 12, 9),
-            status: AttendanceStatus.completed,
-            latitude: -6.2,
-            longitude: 106.8,
-          )
-        : const AttendanceEntity(
-            id: '',
-            userId: 'employee-1',
-            checkedInAt: null,
-            status: AttendanceStatus.notStarted,
-            latitude: 0,
-            longitude: 0,
-          ),
-  );
+  Future<Result<AttendanceEntity>> getToday() async => Success(_record);
+
+  @override
+  Future<Result<AttendanceHistoryPage>> getHistory({
+    required String month,
+    int page = 1,
+    int limit = 20,
+  }) async => history == null
+      ? const FailureResult(ServerFailure('Riwayat absensi belum tersedia.'))
+      : Success(history!);
+
+  @override
+  Future<Result<AttendanceToday>> getTodayState() async {
+    if (initialNotFound && _currentRecord == null) {
+      return const FailureResult(
+        ServerFailure('Resource not found', statusCode: 404, code: 'NOT_FOUND'),
+      );
+    }
+    if (refreshFailsAfterPunch && _currentRecord != null) {
+      return const FailureResult(NetworkFailure('Koneksi terputus.'));
+    }
+    final context = (await getContext() as Success<AttendanceContext>).value;
+    final record = _record;
+    return Success(
+      AttendanceToday(
+        record: record,
+        context: context,
+        serverTime: DateTime.utc(2026, 9, 12, 1),
+        serverDate: '2026-09-12',
+        timezone: 'Asia/Jakarta',
+        canCheckIn:
+            canCheckIn ?? (!record.isActive && record.checkedOutAt == null),
+        canCheckOut: canCheckOut ?? record.isActive,
+      ),
+    );
+  }
 
   @override
   Future<Result<AttendanceEntity>> clockIn(AttendanceCommand value) async {
     clockInCalls++;
     command = value;
     if (failure case final message?) {
-      return FailureResult(ServerFailure(message, statusCode: 400));
+      return FailureResult(
+        ServerFailure(
+          message,
+          statusCode: failureStatusCode,
+          code: failureCode,
+        ),
+      );
     }
-    return Success(
-      AttendanceEntity(
-        id: 'attendance-1',
-        userId: 'employee-1',
-        checkedInAt: value.capturedAt,
-        status: AttendanceStatus.onTime,
-        latitude: value.latitude,
-        longitude: value.longitude,
-      ),
+    final record = AttendanceEntity(
+      id: 'attendance-1',
+      userId: 'employee-1',
+      checkedInAt: value.capturedAt,
+      status: AttendanceStatus.onTime,
+      latitude: value.latitude,
+      longitude: value.longitude,
     );
+    _currentRecord = record;
+    return Success(record);
   }
 
   @override
-  Future<Result<AttendanceEntity>> clockOut(AttendanceCommand command) =>
-      throw UnimplementedError();
+  Future<Result<AttendanceEntity>> clockOut(AttendanceCommand value) async {
+    clockOutCalls++;
+    command = value;
+    if (failure case final message?) {
+      return FailureResult(
+        ServerFailure(
+          message,
+          statusCode: failureStatusCode,
+          code: failureCode,
+        ),
+      );
+    }
+    final record = AttendanceEntity(
+      id: 'attendance-1',
+      userId: 'employee-1',
+      checkedInAt: _record.checkedInAt,
+      checkedOutAt: value.capturedAt,
+      status: AttendanceStatus.completed,
+      latitude: value.latitude,
+      longitude: value.longitude,
+    );
+    _currentRecord = record;
+    return Success(record);
+  }
 }

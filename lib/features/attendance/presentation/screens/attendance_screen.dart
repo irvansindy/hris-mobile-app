@@ -14,6 +14,7 @@ import 'package:hrm_app/core/widgets/app_state_view.dart';
 import 'package:hrm_app/features/attendance/attendance_providers.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_history.dart';
+import 'package:hrm_app/features/attendance/domain/failures/attendance_failure.dart';
 import 'package:hrm_app/features/attendance/presentation/widgets/attendance_overview.dart';
 
 class AttendanceScreen extends ConsumerStatefulWidget {
@@ -45,20 +46,26 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
     final value = today.valueOrNull;
     final record = value?.record;
     final policy = value?.context;
+    final isCheckOut = value?.canCheckOut == true;
+    final hasEligibleAction =
+        value?.canCheckIn == true || value?.canCheckOut == true;
     final needsSelfie =
-        record?.isActive == false && policy?.requiresSelfie == true;
+        value?.canCheckIn == true && policy?.requiresSelfie == true;
+    final requiresCorrection =
+        today.hasError && _requiresCorrection(today.error!);
     final supported =
-        record != null &&
+        hasEligibleAction &&
         policy != null &&
         (faceVerificationLauncher != null
             ? true
-            : record.isActive
+            : isCheckOut
             ? policy.supportsMobileGps
             : needsSelfie
             ? policy.supportsFaceRecognition
             : policy.supportsMobileGps);
     final canSubmit =
-        record?.checkedOutAt == null &&
+        hasEligibleAction &&
+        !requiresCorrection &&
         !today.isLoading &&
         !_verifyingFace &&
         record != null &&
@@ -136,6 +143,12 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                   onRetry: () =>
                       ref.invalidate(attendanceControllerProvider(session)),
                   onOpenSettings: _settingsAction(today.error!),
+                  onCorrection: _requiresCorrection(today.error!)
+                      ? () => context.push(
+                          '/attendance/requests?compose=true',
+                          extra: record?.id.isNotEmpty == true ? record : null,
+                        )
+                      : null,
                 ),
               ],
               const SizedBox(height: 14),
@@ -147,11 +160,15 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                       ? () => faceVerificationLauncher != null
                             ? _verifyFaceAndSubmit(
                                 session,
-                                record,
+                                isCheckOut,
                                 needsSelfie,
                                 faceVerificationLauncher,
                               )
-                            : _confirmAndSubmit(session, record, needsSelfie)
+                            : _confirmAndSubmit(
+                                session,
+                                isCheckOut,
+                                needsSelfie,
+                              )
                       : null,
                   icon: today.isLoading || _verifyingFace
                       ? const SizedBox.square(
@@ -162,7 +179,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                           ),
                         )
                       : Icon(
-                          record?.isActive == true
+                          isCheckOut
                               ? Icons.logout_rounded
                               : Icons.login_rounded,
                         ),
@@ -171,13 +188,13 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                         ? _verifyingFace
                               ? 'Memvalidasi wajah...'
                               : 'Memproses...'
-                        : record?.isActive == true
+                        : isCheckOut
                         ? 'Catat pulang'
                         : 'Catat masuk',
                   ),
                 ),
               ),
-              if (policy != null && !supported) ...[
+              if (hasEligibleAction && policy != null && !supported) ...[
                 const SizedBox(height: 10),
                 Text(
                   'Kebijakan perusahaan tidak menyediakan metode absensi yang didukung aplikasi.',
@@ -286,7 +303,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
 
   Future<void> _confirmAndSubmit(
     FeatureSession session,
-    AttendanceEntity record,
+    bool isCheckOut,
     bool needsSelfie,
   ) async {
     final confirmed = await showModalBottomSheet<bool>(
@@ -302,9 +319,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              record.isActive
-                  ? 'Konfirmasi catat pulang'
-                  : 'Konfirmasi catat masuk',
+              isCheckOut ? 'Konfirmasi catat pulang' : 'Konfirmasi catat masuk',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -336,12 +351,12 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await _submitAttendance(session, record, needsSelfie);
+    await _submitAttendance(session, isCheckOut, needsSelfie);
   }
 
   Future<void> _verifyFaceAndSubmit(
     FeatureSession session,
-    AttendanceEntity record,
+    bool isCheckOut,
     bool needsSelfie,
     AttendanceFaceVerificationLauncher launcher,
   ) async {
@@ -363,7 +378,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
       if (!mounted || !verified) return;
       await _submitAttendance(
         session,
-        record,
+        isCheckOut,
         needsSelfie,
         localFaceVerified: true,
       );
@@ -396,7 +411,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
 
   Future<void> _submitAttendance(
     FeatureSession session,
-    AttendanceEntity record,
+    bool isCheckOut,
     bool needsSelfie, {
     bool localFaceVerified = false,
   }) async {
@@ -418,7 +433,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
         content: Text(
           localFaceVerified
               ? 'Absensi demo tersimpan setelah validasi kamera.'
-              : record.isActive
+              : isCheckOut
               ? 'Waktu pulang tercatat di server.'
               : 'Waktu masuk tercatat di server.',
         ),
@@ -498,21 +513,29 @@ class _AttendanceError extends StatelessWidget {
     required this.error,
     required this.onRetry,
     this.onOpenSettings,
+    this.onCorrection,
   });
 
   final Object error;
   final VoidCallback onRetry;
   final VoidCallback? onOpenSettings;
+  final VoidCallback? onCorrection;
 
   @override
   Widget build(BuildContext context) => AppStateView(
     kind: error is LocationException
         ? AppViewStateKind.permission
         : AppViewStateKind.error,
-    title: 'Absensi belum tercatat',
+    title: error is AttendanceRefreshAfterPunchFailure
+        ? 'Absensi tercatat, status belum diperbarui'
+        : 'Absensi belum tercatat',
     message: _message(error),
-    actionLabel: onOpenSettings == null ? 'Coba lagi' : 'Buka pengaturan',
-    onAction: onOpenSettings ?? onRetry,
+    actionLabel: onCorrection != null
+        ? 'Ajukan koreksi'
+        : onOpenSettings == null
+        ? 'Coba lagi'
+        : 'Buka pengaturan',
+    onAction: onCorrection ?? onOpenSettings ?? onRetry,
   );
 }
 
@@ -782,3 +805,6 @@ String _message(Object error) => switch (error) {
   LocationException(:final message) => message,
   _ => 'Data tidak dapat diproses. Periksa koneksi lalu coba lagi.',
 };
+
+bool _requiresCorrection(Object error) =>
+    error is AttendanceCorrectionRequiredFailure;

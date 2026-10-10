@@ -14,9 +14,10 @@ void main() {
     employeeId: 'employee-1',
     activeCompanyId: 'company-1',
     companyScope: ['company-1'],
+    permissions: ['leave:read', 'leave:create'],
   );
 
-  test('leave list uses self context and pagination envelope', () async {
+  test('leave list uses self context without invented pagination', () async {
     final adapter = _RequestAdapter();
     final dio = Dio()..httpClientAdapter = adapter;
     addTearDown(dio.close);
@@ -24,18 +25,36 @@ void main() {
 
     final page = await remote.getPage(
       kind: RequestKind.leave,
-      page: 2,
+      page: 1,
       limit: 20,
     );
 
     final request = adapter.requests.single;
     expect(request.path, '/leave');
-    expect(request.queryParameters, {'page': 2, 'limit': 20});
+    expect(request.queryParameters, isEmpty);
     expect(request.queryParameters, isNot(contains('employeeId')));
-    expect(page.page, 2);
-    expect(page.total, 21);
+    expect(page.page, 1);
+    expect(page.totalPages, 1);
+    expect(page.hasNextPage, isFalse);
+    expect(page.total, 1);
     expect(page.items.single.id, 'leave-1');
     expect(page.items.single.status, RequestStatus.pending);
+  });
+
+  test('empty request list reports zero pages', () async {
+    final adapter = _RequestAdapter(defect: 'empty-list');
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+
+    final page = await DioRequestRemoteDataSource(
+      dio,
+      () => context,
+    ).getPage(kind: RequestKind.leave, page: 1, limit: 20);
+
+    expect(page.items, isEmpty);
+    expect(page.total, 0);
+    expect(page.totalPages, 0);
+    expect(page.hasNextPage, isFalse);
   });
 
   test('leave types and detail use documented read endpoints', () async {
@@ -69,7 +88,7 @@ void main() {
     );
 
     expect(adapter.requests.single.path, '/permission-requests/my');
-    expect(adapter.requests.single.queryParameters, {'page': 1, 'limit': 20});
+    expect(adapter.requests.single.queryParameters, isEmpty);
     expect(page.items.single.kind, RequestKind.permission);
   });
 
@@ -86,50 +105,136 @@ void main() {
         startDate: DateTime(2026, 9, 21),
         endDate: DateTime(2026, 9, 22),
         reason: 'Keperluan keluarga',
-        attachment: 'data:image/jpeg;base64,AQID',
+        attachment: RequestAttachment(
+          fileName: 'surat.jpg',
+          bytes: Uint8List.fromList([1, 2, 3]),
+        ),
         idempotencyKey: 'leave-attempt-1',
       ),
     );
 
-    final request = adapter.requests.single;
+    expect(adapter.requests, hasLength(2));
+    final upload = adapter.requests.first;
+    expect(upload.path, '/leave/attachments');
+    expect(upload.method, 'POST');
+    expect(upload.data, isA<FormData>());
+    final uploadData = upload.data as FormData;
+    expect(uploadData.files.single.key, 'attachment');
+    expect(uploadData.files.single.value.filename, 'surat.jpg');
+
+    final request = adapter.requests.last;
     expect(request.path, '/leave');
     expect(request.method, 'POST');
     expect(request.headers['Idempotency-Key'], 'leave-attempt-1');
     expect(request.data, {
       'leaveTypeId': 'annual-1',
-      'startDate': '2026-09-21',
-      'endDate': '2026-09-22',
+      'employeeId': 'employee-1',
+      'companyId': 'company-1',
+      'startDate': '2026-09-21T00:00:00.000Z',
+      'endDate': '2026-09-22T00:00:00.000Z',
       'reason': 'Keperluan keluarga',
-      'attachment': 'data:image/jpeg;base64,AQID',
+      'attachment':
+          'https://api.example.test/private-files/leave-attachments/file-1',
     });
     expect(result.id, 'leave-created');
   });
 
-  test('permission submit uses employee self-service endpoint', () async {
+  test('leave create permission is checked before attachment upload', () async {
     final adapter = _RequestAdapter();
     final dio = Dio()..httpClientAdapter = adapter;
     addTearDown(dio.close);
-    final remote = DioRequestRemoteDataSource(dio, () => context);
-
-    await remote.submit(
-      SubmitRequestCommand(
-        kind: RequestKind.permission,
-        type: 'WORK_FROM_HOME',
-        startDate: DateTime(2026, 9, 23),
-        endDate: DateTime(2026, 9, 23),
-        reason: 'Menunggu teknisi',
+    final remote = DioRequestRemoteDataSource(
+      dio,
+      () => const RequestContext(
+        userId: 'user-1',
+        employeeId: 'employee-1',
+        activeCompanyId: 'company-1',
+        companyScope: ['company-1'],
+        permissions: ['leave:read'],
       ),
     );
 
-    final request = adapter.requests.single;
-    expect(request.path, '/permission-requests');
-    expect(request.data, {
-      'type': 'WORK_FROM_HOME',
-      'startDate': '2026-09-23',
-      'endDate': '2026-09-23',
-      'reason': 'Menunggu teknisi',
-    });
+    await expectLater(
+      remote.submit(
+        SubmitRequestCommand(
+          kind: RequestKind.leave,
+          type: 'annual-1',
+          startDate: DateTime(2026, 9, 21),
+          endDate: DateTime(2026, 9, 22),
+          reason: 'Keperluan keluarga',
+          attachment: RequestAttachment(
+            fileName: 'surat.jpg',
+            bytes: Uint8List.fromList([1, 2, 3]),
+          ),
+        ),
+      ),
+      throwsA(isA<Exception>()),
+    );
+
+    expect(adapter.requests, isEmpty);
   });
+
+  test('leave wildcard permits read and create operations', () async {
+    final adapter = _RequestAdapter();
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+    final remote = DioRequestRemoteDataSource(
+      dio,
+      () => const RequestContext(
+        userId: 'user-1',
+        employeeId: 'employee-1',
+        activeCompanyId: 'company-1',
+        companyScope: ['company-1'],
+        permissions: ['leave:*'],
+      ),
+    );
+
+    await remote.getLeaveTypes();
+    await remote.submit(
+      SubmitRequestCommand(
+        kind: RequestKind.leave,
+        type: 'annual-1',
+        startDate: DateTime(2026, 9, 21),
+        endDate: DateTime(2026, 9, 22),
+        reason: 'Keperluan keluarga',
+      ),
+    );
+
+    expect(adapter.requests.map((request) => request.path), [
+      '/leave/types',
+      '/leave',
+    ]);
+  });
+
+  test(
+    'permission submit is blocked while duration contract is ambiguous',
+    () async {
+      final adapter = _RequestAdapter();
+      final dio = Dio()..httpClientAdapter = adapter;
+      addTearDown(dio.close);
+      final remote = DioRequestRemoteDataSource(dio, () => context);
+
+      await expectLater(
+        remote.submit(
+          SubmitRequestCommand(
+            kind: RequestKind.permission,
+            type: 'WORK_FROM_HOME',
+            startDate: DateTime(2026, 9, 23),
+            endDate: DateTime(2026, 9, 23),
+            reason: 'Menunggu teknisi',
+          ),
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('durasi'),
+          ),
+        ),
+      );
+      expect(adapter.requests, isEmpty);
+    },
+  );
 
   test(
     'pending request cancellation uses the matching self-service route',
@@ -239,19 +344,18 @@ class _RequestAdapter implements HttpClientAdapter {
         },
       ],
       ('GET', '/leave') || ('GET', '/permission-requests/my') =>
-        defect == 'malformed-list' ? {'items': 'invalid'} : [request],
+        defect == 'malformed-list'
+            ? {'items': 'invalid'}
+            : defect == 'empty-list'
+            ? <Object>[]
+            : [request],
+      ('POST', '/leave/attachments') => {
+        'url':
+            'https://api.example.test/private-files/leave-attachments/file-1',
+      },
       _ => request,
     };
-    final body =
-        options.method == 'GET' &&
-            (options.path == '/leave' ||
-                options.path == '/permission-requests/my')
-        ? {
-            'success': true,
-            'data': data,
-            'meta': {'page': 2, 'limit': 20, 'total': 21, 'totalPages': 2},
-          }
-        : {'success': true, 'data': data};
+    final body = {'success': true, 'data': data};
     return ResponseBody.fromString(
       jsonEncode(body),
       200,

@@ -5,7 +5,21 @@ import 'package:hrm_app/features/approvals/approval_dependencies.dart';
 import 'package:hrm_app/features/approvals/domain/entities/workflow_approval.dart';
 
 bool canAccessApprovalCenter(RequestContext? context) =>
-    context?.permissions.contains('workflow:approve') == true;
+    context?.hasPermission('workflow:approve') == true;
+
+final approvalDetailProvider = FutureProvider.autoDispose
+    .family<WorkflowApprovalDetail, ({FeatureSession session, String id})>((
+      ref,
+      query,
+    ) async {
+      final value = await ref
+          .watch(approvalRepositoryProvider)
+          .getDetail(query.id);
+      if (!query.session.isCurrent) {
+        throw StateError('Sesi telah berubah. Muat ulang detail approval.');
+      }
+      return value;
+    });
 
 class ApprovalQueueQuery {
   const ApprovalQueueQuery({

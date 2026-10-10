@@ -1,4 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:hrm_app/features/self_service/domain/entities/employee_request.dart';
+
+class RequestAttachment {
+  const RequestAttachment({required this.fileName, required this.bytes});
+
+  final String fileName;
+  final Uint8List bytes;
+}
 
 class SubmitRequestCommand {
   const SubmitRequestCommand({
@@ -15,6 +24,6 @@ class SubmitRequestCommand {
   final DateTime? startDate;
   final DateTime? endDate;
   final String? reason;
-  final String? attachment;
+  final RequestAttachment? attachment;
   final String? idempotencyKey;
 }

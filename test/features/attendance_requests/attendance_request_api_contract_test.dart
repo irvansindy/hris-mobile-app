@@ -93,6 +93,29 @@ void main() {
     expect(adapter.requests, isEmpty);
   });
 
+  test('correction accepts next-day checkout for a night shift', () async {
+    final adapter = _AttendanceRequestAdapter();
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+    final remote = DioAttendanceRequestRemoteDataSource(dio, () => context);
+
+    await remote.createCorrection(
+      CreateAttendanceCorrection(
+        date: DateTime(2026, 9, 18),
+        requestedCheckIn: DateTime(2026, 9, 18, 23),
+        requestedCheckOut: DateTime(2026, 9, 19, 1),
+        reason: 'Koreksi shift malam',
+        idempotencyKey: 'correction-night-shift-1',
+      ),
+    );
+
+    final request = adapter.requests.single;
+    expect(
+      DateTime.parse(request.data['requestedCheckOut'] as String).toLocal(),
+      DateTime(2026, 9, 19, 1),
+    );
+  });
+
   test('overtime list identity comes only from active session', () async {
     final adapter = _AttendanceRequestAdapter();
     final dio = Dio()..httpClientAdapter = adapter;
@@ -174,6 +197,34 @@ void main() {
     expect(adapter.requests, isEmpty);
   });
 
+  test('legacy attendance wildcard authorizes overtime operations', () async {
+    final adapter = _AttendanceRequestAdapter();
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+    final remote = DioAttendanceRequestRemoteDataSource(
+      dio,
+      () => const RequestContext(
+        userId: 'user-1',
+        employeeId: 'employee-1',
+        activeCompanyId: 'company-1',
+        companyScope: ['company-1'],
+        permissions: ['att:*'],
+      ),
+    );
+
+    await remote.getOvertimes();
+    await remote.createOvertime(
+      CreateOvertimeRequest(
+        startTime: DateTime.utc(2026, 9, 18, 23),
+        endTime: DateTime.utc(2026, 9, 19, 1, 30),
+        reason: 'Penutupan bulanan',
+        idempotencyKey: 'legacy-wildcard-attempt',
+      ),
+    );
+
+    expect(adapter.requests, hasLength(2));
+  });
+
   test(
     'pay estimate accepts only server amount for the selected request',
     () async {
@@ -191,6 +242,16 @@ void main() {
     },
   );
 
+  test('pay estimate rejects a negative breakdown value', () async {
+    final adapter = _AttendanceRequestAdapter(defect: 'negative-pay-band');
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+    final remote = DioAttendanceRequestRemoteDataSource(dio, () => context);
+    final request = (await remote.getOvertimes()).single;
+
+    await expectLater(remote.getOvertimePay(request), throwsFormatException);
+  });
+
   test('foreign and malformed response data is rejected', () async {
     for (final defect in ['foreign-company', 'foreign-employee', 'bad-list']) {
       final adapter = _AttendanceRequestAdapter(defect: defect);
@@ -200,6 +261,39 @@ void main() {
 
       await expectLater(remote.getCorrections(), throwsFormatException);
     }
+  });
+
+  test('empty correction and overtime results remain empty', () async {
+    final adapter = _AttendanceRequestAdapter(defect: 'empty-lists');
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+    final remote = DioAttendanceRequestRemoteDataSource(dio, () => context);
+
+    expect(await remote.getCorrections(), isEmpty);
+    expect(await remote.getOvertimes(), isEmpty);
+  });
+
+  test('foreign overtime ownership is rejected', () async {
+    for (final defect in [
+      'foreign-overtime-company',
+      'foreign-overtime-employee',
+    ]) {
+      final adapter = _AttendanceRequestAdapter(defect: defect);
+      final dio = Dio()..httpClientAdapter = adapter;
+      addTearDown(dio.close);
+      final remote = DioAttendanceRequestRemoteDataSource(dio, () => context);
+
+      await expectLater(remote.getOvertimes(), throwsFormatException);
+    }
+  });
+
+  test('reversed correction times from server are rejected', () async {
+    final adapter = _AttendanceRequestAdapter(defect: 'reversed-correction');
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+    final remote = DioAttendanceRequestRemoteDataSource(dio, () => context);
+
+    await expectLater(remote.getCorrections(), throwsFormatException);
   });
 }
 
@@ -218,12 +312,20 @@ class _AttendanceRequestAdapter implements HttpClientAdapter {
     requests.add(options);
     Object? data;
     if (options.path == '/attendance-corrections/my') {
-      data = defect == 'bad-list' ? {'items': []} : [_correction()];
+      data = switch (defect) {
+        'bad-list' => {'items': []},
+        'empty-lists' => <Object?>[],
+        _ => [_correction()],
+      };
     } else if (options.path == '/attendance-corrections/my/correction-1' ||
         options.path == '/attendance-corrections') {
       data = _correction();
     } else if (options.path == '/attendance/overtime') {
-      data = options.method == 'GET' ? [_overtime()] : _overtime();
+      data = options.method == 'GET'
+          ? defect == 'empty-lists'
+                ? <Object?>[]
+                : [_overtime()]
+          : _overtime();
     } else if (options.path == '/attendance/overtime/overtime-1/pay') {
       data = {
         'overtimeId': 'overtime-1',
@@ -233,7 +335,11 @@ class _AttendanceRequestAdapter implements HttpClientAdapter {
         'weightedHours': 2.5,
         'amount': 250000,
         'breakdown': [
-          {'hours': 2.5, 'rate': 1, 'subtotal': 250000},
+          {
+            'hours': 2.5,
+            'rate': 1,
+            'subtotal': defect == 'negative-pay-band' ? -1 : 250000,
+          },
         ],
       };
     }
@@ -253,7 +359,9 @@ class _AttendanceRequestAdapter implements HttpClientAdapter {
     'attendanceId': 'attendance-1',
     'date': '2026-09-18T00:00:00.000Z',
     'requestedCheckIn': '2026-09-18T01:15:00.000Z',
-    'requestedCheckOut': '2026-09-18T10:10:00.000Z',
+    'requestedCheckOut': defect == 'reversed-correction'
+        ? '2026-09-18T00:10:00.000Z'
+        : '2026-09-18T10:10:00.000Z',
     'reason': 'Perangkat tidak dapat digunakan',
     'status': 'PENDING',
     'createdAt': '2026-09-18T11:00:00.000Z',
@@ -262,8 +370,12 @@ class _AttendanceRequestAdapter implements HttpClientAdapter {
 
   Map<String, Object?> _overtime() => {
     'id': 'overtime-1',
-    'employeeId': 'employee-1',
-    'companyId': 'company-1',
+    'employeeId': defect == 'foreign-overtime-employee'
+        ? 'employee-2'
+        : 'employee-1',
+    'companyId': defect == 'foreign-overtime-company'
+        ? 'company-2'
+        : 'company-1',
     'date': '2026-09-18T00:00:00.000Z',
     'startTime': '2026-09-18T23:00:00.000Z',
     'endTime': '2026-09-19T01:30:00.000Z',

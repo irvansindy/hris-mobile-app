@@ -65,6 +65,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
               Row(
+                key: const ValueKey('notifications-header'),
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   IconButton(
@@ -94,6 +95,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               const SizedBox(height: 16),
               if (widget.pushStatusPanel != null) widget.pushStatusPanel!,
               Wrap(
+                key: const ValueKey('notifications-filters'),
                 spacing: 8,
                 runSpacing: 8,
                 children: [
@@ -120,6 +122,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 ],
               ),
               const SizedBox(height: 16),
+              const SizedBox(key: ValueKey('notifications-content'), height: 0),
               if (inbox.isLoading)
                 const AppStateView.loading(
                   title: 'Memuat notifikasi',

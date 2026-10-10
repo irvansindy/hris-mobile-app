@@ -63,6 +63,28 @@ void main() {
     );
   });
 
+  test('feature presentation never selects structure from demo mode', () {
+    const forbidden = [
+      'demoModeProvider',
+      'demoToolsBuilderProvider',
+      'demoHomeSectionsBuilderProvider',
+      'demoAttendanceSummaryBuilderProvider',
+      'demoRequestsBuilderProvider',
+    ];
+    final violations = <String>[];
+    for (final file in _dartFiles('lib/features')) {
+      if (!file.path.contains('/presentation/')) continue;
+      final source = file.readAsStringSync();
+      if (forbidden.any(source.contains)) violations.add(file.path);
+    }
+
+    expect(
+      violations,
+      isEmpty,
+      reason: 'Presentation structure must not depend on demo mode',
+    );
+  });
+
   test('attendance presentation does not select a demo layout', () {
     final violations = <String>[];
     for (final file in _dartFiles('lib/features/attendance/presentation')) {

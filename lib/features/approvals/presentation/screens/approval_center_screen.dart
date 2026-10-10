@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hrm_app/core/network/api_exception.dart';
+import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
@@ -43,6 +44,7 @@ class _ApprovalCenterScreenState extends ConsumerState<ApprovalCenterScreen> {
             ),
             children: [
               AppDetailHeader(
+                key: const ValueKey('approval-header'),
                 title: 'Approval Center',
                 subtitle: 'Persetujuan yang menunggu keputusan Anda',
                 onBack: () => context.pop(),
@@ -60,6 +62,7 @@ class _ApprovalCenterScreenState extends ConsumerState<ApprovalCenterScreen> {
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
+              const SizedBox(key: ValueKey('approval-content'), height: 0),
               state.when(
                 loading: () => const AppStateView.loading(
                   title: 'Memuat antrean approval',
@@ -92,6 +95,7 @@ class _ApprovalCenterScreenState extends ConsumerState<ApprovalCenterScreen> {
     ApprovalQueueQuery query,
     WorkflowApprovalPage page,
   ) {
+    final requestContext = ref.read(requestContextProvider);
     if (page.items.isEmpty) {
       return const AppStateView(
         key: ValueKey('approval-empty'),
@@ -134,7 +138,13 @@ class _ApprovalCenterScreenState extends ConsumerState<ApprovalCenterScreen> {
                 _selected.remove(item.instanceId);
               }
             }),
-            onOpen: () => _showDetail(query, item),
+            onOpen: () => _showDetail(
+              query,
+              item,
+              canReadDetail:
+                  requestContext?.hasPermission('workflow:read') == true,
+              employeeId: requestContext?.employeeId,
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
         ],
@@ -172,28 +182,41 @@ class _ApprovalCenterScreenState extends ConsumerState<ApprovalCenterScreen> {
     );
   }
 
-  Future<void> _showDetail(ApprovalQueueQuery query, WorkflowApproval item) =>
-      showModalBottomSheet<void>(
-        context: context,
-        useSafeArea: true,
-        isScrollControlled: true,
-        showDragHandle: true,
-        sheetAnimationStyle: AppMotion.sheetStyleOf(context),
-        builder: (sheetContext) => _ApprovalDetailSheet(
-          item: item,
-          busy: _busy,
-          onAction: (action) async {
-            Navigator.pop(sheetContext);
-            await _runAction(query, item, action);
-          },
-        ),
-      );
+  Future<void> _showDetail(
+    ApprovalQueueQuery query,
+    WorkflowApproval item, {
+    required bool canReadDetail,
+    required String? employeeId,
+  }) => showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    isScrollControlled: true,
+    showDragHandle: true,
+    sheetAnimationStyle: AppMotion.sheetStyleOf(context),
+    builder: (sheetContext) => _ApprovalDetailSheet(
+      item: item,
+      session: query.session,
+      canReadDetail: canReadDetail,
+      employeeId: employeeId,
+      busy: _busy,
+      onAction: (action, subjectEmployeeId) async {
+        Navigator.pop(sheetContext);
+        await _runAction(
+          query,
+          item,
+          action,
+          subjectEmployeeId: subjectEmployeeId,
+        );
+      },
+    ),
+  );
 
   Future<void> _runAction(
     ApprovalQueueQuery query,
     WorkflowApproval item,
-    WorkflowApprovalAction action,
-  ) async {
+    WorkflowApprovalAction action, {
+    String? subjectEmployeeId,
+  }) async {
     if (_busy) return;
     final comment = await showDialog<String?>(
       context: context,
@@ -212,6 +235,7 @@ class _ApprovalCenterScreenState extends ConsumerState<ApprovalCenterScreen> {
             instanceId: item.instanceId,
             action: action,
             comment: comment.isEmpty ? null : comment,
+            subjectEmployeeId: subjectEmployeeId,
           );
       _selected.remove(item.instanceId);
       ref.invalidate(approvalQueueProvider);
@@ -462,79 +486,140 @@ class _ApprovalCard extends StatelessWidget {
   );
 }
 
-class _ApprovalDetailSheet extends StatelessWidget {
+class _ApprovalDetailSheet extends ConsumerWidget {
   const _ApprovalDetailSheet({
     required this.item,
+    required this.session,
+    required this.canReadDetail,
+    required this.employeeId,
     required this.busy,
     required this.onAction,
   });
 
   final WorkflowApproval item;
+  final FeatureSession session;
+  final bool canReadDetail;
+  final String? employeeId;
   final bool busy;
-  final ValueChanged<WorkflowApprovalAction> onAction;
+  final void Function(WorkflowApprovalAction action, String? subjectEmployeeId)
+  onAction;
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    padding: EdgeInsets.fromLTRB(
-      AppSpacing.screenHorizontal,
-      AppSpacing.xs,
-      AppSpacing.screenHorizontal,
-      AppSpacing.lg + MediaQuery.viewInsetsOf(context).bottom,
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(item.title, style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'Tinjau ringkasan server sebelum menentukan keputusan.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        AppSurfaceCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _DetailRow(
-                label: 'Jenis',
-                value: _referenceLabel(item.referenceType),
-              ),
-              _DetailRow(
-                label: 'Pemohon',
-                value: item.requesterLabel ?? 'Tidak dicantumkan server',
-              ),
-              _DetailRow(label: 'Tahap', value: item.stepName),
-              _DetailRow(label: 'Dikirim', value: _date(item.submittedAt)),
-            ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AsyncValue<WorkflowApprovalDetail?> state = canReadDetail
+        ? ref
+              .watch(
+                approvalDetailProvider((session: session, id: item.instanceId)),
+              )
+              .whenData((value) => value)
+        : const AsyncValue.data(null);
+    final detail = state.valueOrNull;
+    final selfApproval =
+        employeeId != null &&
+        detail?.subjectEmployeeIds.contains(employeeId) == true;
+    final subjectEmployeeId = selfApproval ? employeeId : null;
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.screenHorizontal,
+        AppSpacing.xs,
+        AppSpacing.screenHorizontal,
+        AppSpacing.lg + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(item.title, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Tinjau ringkasan server sebelum menentukan keputusan.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        FilledButton.icon(
-          onPressed: busy
-              ? null
-              : () => onAction(WorkflowApprovalAction.approve),
-          icon: const Icon(Icons.check_rounded),
-          label: const Text('Setujui'),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        OutlinedButton.icon(
-          onPressed: busy
-              ? null
-              : () => onAction(WorkflowApprovalAction.reject),
-          icon: const Icon(Icons.close_rounded),
-          label: const Text('Tolak dengan alasan'),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        TextButton.icon(
-          onPressed: busy
-              ? null
-              : () => onAction(WorkflowApprovalAction.escalate),
-          icon: const Icon(Icons.forward_to_inbox_outlined),
-          label: const Text('Eskalasi'),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(height: AppSpacing.lg),
+          AppSurfaceCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _DetailRow(
+                  label: 'Jenis',
+                  value: _referenceLabel(item.referenceType),
+                ),
+                _DetailRow(
+                  label: 'Pemohon',
+                  value: item.requesterLabel ?? 'Tidak dicantumkan server',
+                ),
+                _DetailRow(
+                  label: 'Tahap',
+                  value: detail == null
+                      ? item.stepName
+                      : 'Level ${detail.currentLevel}',
+                ),
+                _DetailRow(label: 'Dikirim', value: _date(item.submittedAt)),
+              ],
+            ),
+          ),
+          if (state.isLoading) ...[
+            const SizedBox(height: AppSpacing.sm),
+            const LinearProgressIndicator(),
+          ] else if (state.hasError) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Detail terbaru tidak dapat dimuat. Muat ulang sebelum mengambil keputusan.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ] else if (!canReadDetail) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Ringkasan antrean ditampilkan karena akun tidak memiliki workflow:read.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          if (selfApproval) ...[
+            const SizedBox(height: AppSpacing.md),
+            const AppStateView(
+              kind: AppViewStateKind.permission,
+              title: 'Pengajuan milik Anda',
+              message: 'Self-approval tidak diizinkan oleh workflow.',
+            ),
+          ],
+          const SizedBox(height: AppSpacing.lg),
+          FilledButton.icon(
+            onPressed: busy || state.isLoading || state.hasError || selfApproval
+                ? null
+                : () => onAction(
+                    WorkflowApprovalAction.approve,
+                    subjectEmployeeId,
+                  ),
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('Setujui'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: busy || state.isLoading || state.hasError || selfApproval
+                ? null
+                : () => onAction(
+                    WorkflowApprovalAction.reject,
+                    subjectEmployeeId,
+                  ),
+            icon: const Icon(Icons.close_rounded),
+            label: const Text('Tolak dengan alasan'),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          TextButton.icon(
+            onPressed: busy || state.isLoading || state.hasError || selfApproval
+                ? null
+                : () => onAction(
+                    WorkflowApprovalAction.escalate,
+                    subjectEmployeeId,
+                  ),
+            icon: const Icon(Icons.forward_to_inbox_outlined),
+            label: const Text('Eskalasi'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _DetailRow extends StatelessWidget {

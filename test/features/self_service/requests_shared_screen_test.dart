@@ -102,14 +102,42 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('paginated data labels current-page counts honestly', (
+  testWidgets(
+    'production request form explains unavailable permission create',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            requestContextProvider.overrideWith(
+              (_) => const RequestContext(
+                userId: 'user-1',
+                employeeId: 'employee-1',
+                activeCompanyId: 'company-1',
+                companyScope: ['company-1'],
+                permissions: ['leave:create'],
+              ),
+            ),
+            requestRepositoryProvider.overrideWithValue(
+              _BlockedPermissionRepository(),
+            ),
+          ],
+          child: const MaterialApp(
+            home: RequestFormScreen(kind: RequestKind.permission),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pengajuan izin belum tersedia'), findsOneWidget);
+      expect(find.textContaining('durasi'), findsOneWidget);
+      expect(find.text('Tinjau dan kirim'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('leave wildcard permits the production leave form', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(400, 2400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -119,22 +147,22 @@ void main() {
               employeeId: 'employee-1',
               activeCompanyId: 'company-1',
               companyScope: ['company-1'],
-              permissions: ['leave:create'],
+              permissions: ['leave:*'],
             ),
           ),
           requestRepositoryProvider.overrideWithValue(
-            _PaginatedRequestRepository(),
+            _EmptyRequestRepository(),
           ),
         ],
-        child: const MaterialApp(home: RequestsScreen()),
+        child: const MaterialApp(
+          home: RequestFormScreen(kind: RequestKind.leave),
+        ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('50 pengajuan · halaman 1 dari 3'), findsOneWidget);
-    expect(find.text('1 menunggu di halaman ini'), findsOneWidget);
-    expect(find.text('1 aktif · 1 selesai'), findsNothing);
-    expect(tester.takeException(), isNull);
+    expect(find.text('Akses pengajuan tidak tersedia'), findsNothing);
+    expect(find.text('Detail cuti'), findsOneWidget);
   });
 
   testWidgets('request form uses persistence-neutral workflow copy', (
@@ -192,7 +220,7 @@ class _EmptyRequestRepository extends RequestRepository {
       throw UnimplementedError();
 }
 
-class _PaginatedRequestRepository extends RequestRepository {
+class _BlockedPermissionRepository extends RequestRepository {
   @override
   List<EmployeeRequest> get current => const [];
 
@@ -200,40 +228,9 @@ class _PaginatedRequestRepository extends RequestRepository {
   Future<List<EmployeeRequest>> refresh() async => const [];
 
   @override
-  Future<EmployeeRequestPage> getPage({
-    required RequestKind kind,
-    int page = 1,
-    int limit = 20,
-  }) async => kind == RequestKind.leave
-      ? const EmployeeRequestPage(
-          items: [
-            EmployeeRequest(
-              id: 'leave-1',
-              type: 'Cuti tahunan',
-              dateRange: '2026-10-01',
-              submittedOn: '2026-09-30',
-              status: RequestStatus.pending,
-            ),
-          ],
-          page: 1,
-          totalPages: 3,
-          total: 30,
-        )
-      : const EmployeeRequestPage(
-          items: [
-            EmployeeRequest(
-              id: 'permission-1',
-              kind: RequestKind.permission,
-              type: 'Izin',
-              dateRange: '2026-09-29',
-              submittedOn: '2026-09-28',
-              status: RequestStatus.approved,
-            ),
-          ],
-          page: 1,
-          totalPages: 2,
-          total: 20,
-        );
+  String? submissionBlocker(RequestKind kind) => kind == RequestKind.permission
+      ? 'Kontrak durasi dan upload lampiran izin belum dipastikan backend.'
+      : null;
 
   @override
   Future<EmployeeRequest> submit(SubmitRequestCommand command) =>

@@ -22,6 +22,7 @@ final calendarRepositoryProvider = Provider<CalendarRepository>((ref) {
         : DioCalendarRemoteDataSource(
             ref.watch(featureDioProvider),
             employeeId: context!.employeeId!,
+            companyId: context.activeCompanyId!,
           ),
   );
 });

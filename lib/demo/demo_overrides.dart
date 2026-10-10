@@ -9,6 +9,7 @@ import 'package:hrm_app/core/services/location_service.dart';
 import 'package:hrm_app/demo/demo_app.dart';
 import 'package:hrm_app/demo/demo_store.dart';
 import 'package:hrm_app/demo/demo_design_repositories.dart';
+import 'package:hrm_app/demo/demo_secondary_repositories.dart';
 import 'package:hrm_app/demo/demo_payroll_repository.dart';
 import 'package:hrm_app/features/calendar/calendar_dependencies.dart';
 import 'package:hrm_app/demo/demo_repositories.dart';
@@ -20,6 +21,11 @@ import 'package:hrm_app/features/dashboard/dashboard_providers.dart';
 import 'package:hrm_app/features/self_service/self_service_dependencies.dart';
 import 'package:hrm_app/features/self_service/self_service_providers.dart';
 import 'package:hrm_app/features/profile/profile_dependencies.dart';
+import 'package:hrm_app/features/profile/profile_providers.dart';
+import 'package:hrm_app/features/account_security/account_security_providers.dart';
+import 'package:hrm_app/features/approvals/approval_dependencies.dart';
+import 'package:hrm_app/features/ess/ess_providers.dart';
+import 'package:hrm_app/features/notifications/notification_providers.dart';
 import 'package:hrm_app/features/payroll/payroll_dependencies.dart';
 
 List<Override> demoOverrides(
@@ -50,11 +56,16 @@ List<Override> demoOverrides(
     }),
     locationServiceProvider.overrideWithValue(DemoLocation()),
     profileRepositoryProvider.overrideWithValue(DemoDesignProfile()),
+    employeeSupportRepositoryProvider.overrideWithValue(DemoEmployeeSupport()),
     calendarRepositoryProvider.overrideWithValue(DemoDesignCalendar()),
+    notificationRepositoryProvider.overrideWithValue(DemoNotifications()),
+    approvalRepositoryProvider.overrideWithValue(DemoApprovals()),
+    essRepositoryProvider.overrideWithValue(DemoEss()),
+    accountSecurityRepositoryProvider.overrideWithValue(DemoAccountSecurity()),
     payrollRepositoryProvider.overrideWithValue(DemoPayrollRepository()),
     dioProvider.overrideWith((ref) => _offlineDio(ref)),
     featureDioProvider.overrideWith((ref) => _offlineDio(ref)),
-    demoToolsBuilderProvider.overrideWith(
+    profileFaceIdBuilderProvider.overrideWith(
       (ref) =>
           (_) => DemoToolsScreen(
             store: store,

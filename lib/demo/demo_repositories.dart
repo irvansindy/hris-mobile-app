@@ -131,8 +131,9 @@ class DemoAttendance extends AttendanceRepository {
       AttendanceHistoryPage(
         items: items.skip((page - 1) * limit).take(limit).toList(),
         page: page,
-        totalPages: items.isEmpty ? 1 : (items.length / limit).ceil(),
+        totalPages: items.isEmpty ? 0 : (items.length / limit).ceil(),
         total: items.length,
+        hasNextPage: page * limit < items.length,
       ),
     );
   }

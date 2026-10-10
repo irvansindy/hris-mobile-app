@@ -73,8 +73,7 @@ List<AppQuickActionItem> buildAvailableQuickActions({
         final permission = capability.requiredPermission;
         return capability.endpointAvailable &&
             capability.route != null &&
-            (permission == null ||
-                requestContext.permissions.contains(permission));
+            (permission == null || requestContext.hasPermission(permission));
       })
       .map(
         (capability) => AppQuickActionItem(

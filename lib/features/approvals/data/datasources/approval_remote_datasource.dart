@@ -10,10 +10,12 @@ abstract interface class ApprovalRemoteDataSource {
     required int page,
     required int limit,
   });
+  Future<WorkflowApprovalDetail> getDetail(String instanceId);
   Future<void> applyAction({
     required String instanceId,
     required WorkflowApprovalAction action,
     String? comment,
+    String? subjectEmployeeId,
   });
   Future<WorkflowBulkResult> applyBulkAction({
     required List<String> instanceIds,
@@ -63,7 +65,31 @@ class DioApprovalRemoteDataSource implements ApprovalRemoteDataSource {
         page: _integer(meta['page'], page),
         totalPages: _integer(meta['totalPages'], page),
         total: _integer(meta['total'], items.length),
+        hasNextPage: meta['hasNextPage'] is bool
+            ? meta['hasNextPage'] as bool
+            : null,
       );
+    } on DioException catch (error) {
+      throw mapDioException(error);
+    }
+  }
+
+  @override
+  Future<WorkflowApprovalDetail> getDetail(String instanceId) async {
+    final context = _requireWorkflowReader();
+    _requireSafeId(instanceId);
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/workflow-engine/instances/$instanceId',
+      );
+      final detail = _approvalDetail(
+        ApiEnvelope.fromJson(response.data ?? const {}).requireObjectData(),
+        context,
+      );
+      if (detail.instanceId != instanceId) {
+        throw const FormatException('Workflow detail identity is invalid');
+      }
+      return detail;
     } on DioException catch (error) {
       throw mapDioException(error);
     }
@@ -74,9 +100,17 @@ class DioApprovalRemoteDataSource implements ApprovalRemoteDataSource {
     required String instanceId,
     required WorkflowApprovalAction action,
     String? comment,
+    String? subjectEmployeeId,
   }) async {
-    _requireApprover();
+    final context = _requireApprover();
     _requireSafeId(instanceId);
+    if (subjectEmployeeId != null && subjectEmployeeId == context.employeeId) {
+      throw const ApiException(
+        'Anda tidak dapat memproses pengajuan yang menyangkut diri sendiri.',
+        statusCode: 403,
+        code: 'SELF_APPROVAL_FORBIDDEN',
+      );
+    }
     final normalizedComment = _actionComment(action, comment);
     try {
       final response = await _dio.post<Map<String, dynamic>>(
@@ -215,7 +249,7 @@ class DioApprovalRemoteDataSource implements ApprovalRemoteDataSource {
 
   RequestContext _requireApprover() {
     final context = _requireContext();
-    if (!context.permissions.contains('workflow:approve')) {
+    if (!context.hasPermission('workflow:approve')) {
       throw const ApiException(
         'Akun tidak memiliki izin Approval Center.',
         statusCode: 403,
@@ -223,6 +257,66 @@ class DioApprovalRemoteDataSource implements ApprovalRemoteDataSource {
       );
     }
     return context;
+  }
+
+  RequestContext _requireWorkflowReader() {
+    final context = _requireContext();
+    if (!context.hasPermission('workflow:read')) {
+      throw const ApiException(
+        'Akun tidak memiliki izin membaca detail workflow.',
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      );
+    }
+    return context;
+  }
+
+  WorkflowApprovalDetail _approvalDetail(
+    Map<String, dynamic> json,
+    RequestContext context,
+  ) {
+    final companyId = _requiredText(json, const ['companyId']);
+    if (companyId != context.activeCompanyId) {
+      throw const FormatException('Workflow detail does not match company');
+    }
+    final payload = json['payload'];
+    final payloadMap = payload is Map<String, dynamic>
+        ? payload
+        : const <String, dynamic>{};
+    final subjects = <String>{};
+    for (final key in const [
+      'employeeId',
+      'subjectEmployeeId',
+      'requesterEmployeeId',
+    ]) {
+      final value = _text(payloadMap, [key]);
+      if (value != null) subjects.add(value);
+    }
+    final rawSubjectIds = payloadMap['subjectEmployeeIds'];
+    if (rawSubjectIds is List) {
+      for (final value in rawSubjectIds) {
+        if (value is String && value.trim().isNotEmpty) {
+          subjects.add(value.trim());
+        }
+      }
+    }
+    return WorkflowApprovalDetail(
+      instanceId: _requiredText(json, const ['id']),
+      companyId: companyId,
+      referenceType: _requiredText(json, const ['referenceType']),
+      referenceId: _requiredText(json, const ['referenceId']),
+      approvalType: _requiredText(json, const ['approvalType']),
+      status: _requiredText(json, const ['status']),
+      currentLevel: _requiredInteger(json['currentLevel']),
+      submittedAt: _requiredDate(json['createdAt']),
+      requesterId: _text(json, const ['requesterId']),
+      requesterLabel: _text(payloadMap, const [
+        'requesterName',
+        'employeeName',
+        'subjectName',
+      ]),
+      subjectEmployeeIds: List.unmodifiable(subjects),
+    );
   }
 
   WorkflowApproval _approval(

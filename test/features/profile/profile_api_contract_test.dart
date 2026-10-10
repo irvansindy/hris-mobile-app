@@ -80,6 +80,86 @@ void main() {
     );
     expect(adapter.request, isNull);
   });
+  test('employee wildcard permission can read the profile', () async {
+    final adapter = _Adapter();
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+
+    final employee = await DioProfileRemoteDataSource(dio).fetch(
+      const RequestContext(
+        userId: 'u1',
+        employeeId: 'e1',
+        activeCompanyId: 'c1',
+        companyScope: ['c1'],
+        permissions: ['employee:*'],
+      ),
+      EmptyProfileLocalDataSource().readCurrentEmployee(),
+    );
+
+    expect(employee.id, 'EMP001');
+  });
+  test(
+    'masked contact values never become editable-looking profile values',
+    () async {
+      final adapter = _Adapter(defect: 'masked-contact');
+      final dio = Dio()..httpClientAdapter = adapter;
+      addTearDown(dio.close);
+
+      final employee = await DioProfileRemoteDataSource(
+        dio,
+      ).fetch(_context, EmptyProfileLocalDataSource().readCurrentEmployee());
+
+      expect(employee.email, _context.email);
+      expect(employee.phone, isEmpty);
+      expect(employee.email, isNot(contains('*')));
+      expect(employee.phone, isNot(contains('*')));
+    },
+  );
+  test(
+    'six sensitive fields stay outside the read-only profile projection',
+    () async {
+      for (final permissions in [
+        const ['employee:read'],
+        const ['employee:read', 'employee:read-sensitive'],
+        const ['employee:*'],
+      ]) {
+        final adapter = _Adapter();
+        final dio = Dio()..httpClientAdapter = adapter;
+        addTearDown(dio.close);
+        final employee = await DioProfileRemoteDataSource(dio).fetch(
+          RequestContext(
+            userId: 'u1',
+            employeeId: 'e1',
+            activeCompanyId: 'c1',
+            companyScope: const ['c1'],
+            permissions: permissions,
+          ),
+          EmptyProfileLocalDataSource().readCurrentEmployee(),
+        );
+        final projection = [
+          employee.id,
+          employee.name,
+          employee.role,
+          employee.department,
+          employee.email,
+          employee.phone,
+          employee.location,
+          employee.joinDate,
+        ].join('|');
+        for (final pii in const [
+          'ID-SECRET',
+          'TAX-SECRET',
+          'BANK-SECRET',
+          'HOLDER-SECRET',
+          'BPJSTK-SECRET',
+          'BPJSKES-SECRET',
+        ]) {
+          expect(projection, isNot(contains(pii)));
+        }
+        expect(employee.salary, 0);
+      }
+    },
+  );
   test(
     'controller exposes failure, retains session identity and can retry',
     () async {
@@ -203,12 +283,23 @@ class _Adapter implements HttpClientAdapter {
                 'companyId': defect == 'company' ? 'c2' : 'c1',
                 'employeeNumber': 'EMP001',
                 'fullName': 'Employee Server',
-                'email': 'employee@example.test',
+                'email': defect == 'masked-contact'
+                    ? '********@example.test'
+                    : 'employee@example.test',
+                'phone': defect == 'masked-contact'
+                    ? '********0001'
+                    : '081234567890',
                 'department': {'name': 'Operasional'},
                 'position': {'name': 'Staff'},
                 'branch': {'name': 'Kantor Pusat'},
                 'joinDate': '2026-05-01T00:00:00.000Z',
                 'salary': 99999999,
+                'idNumber': 'ID-SECRET',
+                'taxId': 'TAX-SECRET',
+                'bankAccount': 'BANK-SECRET',
+                'bankAccountHolder': 'HOLDER-SECRET',
+                'bpjsKetenagakerjaan': 'BPJSTK-SECRET',
+                'bpjsKesehatan': 'BPJSKES-SECRET',
               },
       }),
       200,

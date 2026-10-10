@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hrm_app/core/localization/app_localizations.dart';
 import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/theme/app_theme.dart';
@@ -48,7 +48,7 @@ void main() {
               theme: dark ? AppTheme.dark : AppTheme.light,
               locale: const Locale('id', 'ID'),
               supportedLocales: const [Locale('id', 'ID')],
-              localizationsDelegates: GlobalMaterialLocalizations.delegates,
+              localizationsDelegates: appLocalizationsDelegates,
               builder: (context, child) => MediaQuery(
                 data: MediaQuery.of(context).copyWith(
                   textScaler: const TextScaler.linear(2),
@@ -120,7 +120,7 @@ void main() {
           theme: AppTheme.light,
           locale: const Locale('id', 'ID'),
           supportedLocales: const [Locale('id', 'ID')],
-          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          localizationsDelegates: appLocalizationsDelegates,
           home: EssScreen(initialArea: area),
         ),
       ),
@@ -220,6 +220,14 @@ final _loanSnapshot = LoanSnapshot(
 class _EssRepository implements EssRepository {
   _EssRepository({this.pendingLoans});
   final Completer<LoanSnapshot>? pendingLoans;
+
+  @override
+  Future<AssetPage> getAssets({
+    int page = 1,
+    int limit = 20,
+    AssetAssignmentStatus status = AssetAssignmentStatus.active,
+  }) async =>
+      AssetPage(items: const [], page: page, total: 0, hasNextPage: false);
 
   @override
   Future<LoanSnapshot> getLoans() async =>

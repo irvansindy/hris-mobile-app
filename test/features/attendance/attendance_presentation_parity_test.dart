@@ -154,7 +154,13 @@ class _ProductionRepository extends AttendanceRepository {
     int page = 1,
     int limit = 20,
   }) async => const Success(
-    AttendanceHistoryPage(items: [], page: 1, totalPages: 1, total: 0),
+    AttendanceHistoryPage(
+      items: [],
+      page: 1,
+      totalPages: 0,
+      total: 0,
+      hasNextPage: false,
+    ),
   );
 
   @override

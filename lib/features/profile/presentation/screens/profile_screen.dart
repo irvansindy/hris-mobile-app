@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hrm_app/core/config/demo_mode.dart';
-
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
 import 'package:hrm_app/core/widgets/app_state_view.dart';
@@ -9,6 +7,7 @@ import 'package:hrm_app/features/profile/profile_providers.dart';
 import 'package:hrm_app/core/network/api_exception.dart';
 import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/core/services/app_metadata.dart';
+import 'package:hrm_app/core/security/session_lifecycle.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({
@@ -29,9 +28,11 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final employee = ref.watch(profileControllerProvider);
-    final demoTools = ref.watch(demoToolsBuilderProvider);
+    final faceIdBuilder = ref.watch(profileFaceIdBuilderProvider);
     final load = ref.watch(profileLoadStateProvider);
+    final session = ref.watch(featureSessionProvider);
     final requestContext = ref.watch(requestContextProvider);
+    final support = ref.watch(employeeSupportProvider(session));
     final version = ref.watch(appVersionProvider);
     final darkMode = Theme.of(context).brightness == Brightness.dark;
     final identity = [
@@ -54,7 +55,11 @@ class ProfileScreen extends ConsumerWidget {
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
-          onRefresh: ref.read(profileControllerProvider.notifier).refresh,
+          onRefresh: () async {
+            await ref.read(profileControllerProvider.notifier).refresh();
+            ref.invalidate(employeeSupportProvider(session));
+            await ref.read(employeeSupportProvider(session).future);
+          },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(
@@ -67,6 +72,7 @@ class ProfileScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Column(
+                  key: const ValueKey('profile-identity'),
                   children: [
                     AppInitialAvatar(name: employee.name, size: 88),
                     const SizedBox(height: 14),
@@ -156,21 +162,126 @@ class ProfileScreen extends ConsumerWidget {
                 ],
                 if (contacts.isNotEmpty) ...[
                   const SizedBox(height: 22),
-                  const AppSectionLabel('Kontak'),
-                  _InfoGroup(items: contacts),
+                  KeyedSubtree(
+                    key: const ValueKey('profile-contact'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const AppSectionLabel('Kontak'),
+                        _InfoGroup(items: contacts),
+                      ],
+                    ),
+                  ),
                 ],
                 if (employment.isNotEmpty) ...[
                   const SizedBox(height: 20),
-                  const AppSectionLabel('Kepegawaian'),
-                  _InfoGroup(items: employment),
+                  KeyedSubtree(
+                    key: const ValueKey('profile-employment'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const AppSectionLabel('Kepegawaian'),
+                        _InfoGroup(items: employment),
+                      ],
+                    ),
+                  ),
                 ],
+                support.when(
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
+                  data: (snapshot) {
+                    final supervisor = snapshot.reportingLine.primarySupervisor;
+                    if (supervisor == null) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: _InfoGroup(
+                        items: [
+                          (
+                            label: 'Atasan',
+                            value: supervisor.position == null
+                                ? supervisor.name
+                                : '${supervisor.name} · ${supervisor.position}',
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
                 const SizedBox(height: 20),
-                const AppSectionLabel('Dokumen'),
-                const AppStateView(
-                  kind: AppViewStateKind.empty,
-                  title: 'Dokumen belum tersedia',
-                  message:
-                      'Slip gaji, kontrak, dan sertifikat akan muncul setelah endpoint dokumen terintegrasi.',
+                KeyedSubtree(
+                  key: ValueKey('profile-documents'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const AppSectionLabel('Dokumen'),
+                      support.when(
+                        loading: () => const AppStateView.loading(
+                          title: 'Memuat dokumen',
+                          message: 'Mengambil metadata dokumen privat.',
+                        ),
+                        error: (error, _) => AppStateView(
+                          kind: error is ApiException && error.statusCode == 403
+                              ? AppViewStateKind.permission
+                              : AppViewStateKind.error,
+                          title: 'Dokumen gagal dimuat',
+                          message: 'Metadata dokumen tidak dapat diambil.',
+                          actionLabel: 'Coba lagi',
+                          onAction: () =>
+                              ref.invalidate(employeeSupportProvider(session)),
+                        ),
+                        data: (snapshot) {
+                          if (!snapshot.canReadAttachments) {
+                            return const AppStateView(
+                              kind: AppViewStateKind.permission,
+                              title: 'Dokumen terbatas',
+                              message:
+                                  'Akun ini tidak memiliki izin employee:read.',
+                            );
+                          }
+                          if (snapshot.attachments.isEmpty) {
+                            return const AppStateView(
+                              kind: AppViewStateKind.empty,
+                              title: 'Dokumen belum tersedia',
+                              message:
+                                  'Slip gaji, kontrak, dan sertifikat akan muncul setelah endpoint dokumen terintegrasi.',
+                            );
+                          }
+                          return AppSurfaceCard(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 4,
+                            ),
+                            child: Column(
+                              children: snapshot.attachments.indexed
+                                  .map((entry) {
+                                    final item = entry.$2;
+                                    return Column(
+                                      children: [
+                                        ListTile(
+                                          contentPadding: EdgeInsets.zero,
+                                          leading: const AppIconTile(
+                                            icon: Icons.description_outlined,
+                                          ),
+                                          title: Text(item.name),
+                                          subtitle: Text(
+                                            item.documentType ??
+                                                item.mimeType ??
+                                                'Dokumen privat',
+                                          ),
+                                        ),
+                                        if (entry.$1 <
+                                            snapshot.attachments.length - 1)
+                                          const Divider(),
+                                      ],
+                                    );
+                                  })
+                                  .toList(growable: false),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
                 if (onOpenPayroll != null &&
                     requestContext?.hasPermission('payroll:read') == true) ...[
@@ -202,17 +313,12 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                 ],
                 const SizedBox(height: 20),
-                const AppSectionLabel('Pengaturan'),
-                if (demoTools != null) ...[
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).push(MaterialPageRoute<void>(builder: demoTools)),
-                    child: const Text('Pengujian demo · Face ID'),
-                  ),
-                  const SizedBox(height: 10),
-                ],
+                const AppSectionLabel(
+                  'Pengaturan',
+                  key: ValueKey('profile-settings'),
+                ),
                 AppSurfaceCard(
+                  key: const ValueKey('profile-preferences'),
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
@@ -239,6 +345,66 @@ class ProfileScreen extends ConsumerWidget {
                         onChanged: (_) => onThemeToggle(),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                AppSurfaceCard(
+                  key: const ValueKey('profile-face-id'),
+                  onTap: faceIdBuilder == null
+                      ? null
+                      : () => Navigator.of(
+                          context,
+                        ).push(MaterialPageRoute<void>(builder: faceIdBuilder)),
+                  semanticLabel: faceIdBuilder == null
+                      ? 'Face ID belum tersedia'
+                      : 'Kelola Face ID',
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 52),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.face_retouching_natural_rounded,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Kelola Face ID',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                faceIdBuilder == null
+                                    ? 'Belum tersedia pada konfigurasi ini'
+                                    : 'Siap digunakan di perangkat ini',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          faceIdBuilder == null
+                              ? Icons.lock_outline_rounded
+                              : Icons.chevron_right_rounded,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 if (onOpenAccountSecurity != null) ...[
@@ -306,6 +472,7 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
                 SizedBox(
+                  key: const ValueKey('profile-sign-out'),
                   height: 52,
                   child: OutlinedButton(
                     onPressed: onSignOut,

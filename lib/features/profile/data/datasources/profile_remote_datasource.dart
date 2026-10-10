@@ -18,7 +18,7 @@ class DioProfileRemoteDataSource implements ProfileRemoteDataSource {
   Future<Employee> fetch(RequestContext context, Employee fallback) async {
     final employeeId = context.employeeId;
     if (employeeId == null) return fallback;
-    if (!context.permissions.contains('employee:read')) {
+    if (!_canReadEmployee(context.permissions)) {
       throw const ApiException(
         'Akun ini tidak memiliki akses detail kepegawaian. Identitas sesi tetap tersedia.',
         statusCode: 403,
@@ -112,10 +112,18 @@ class DioProfileRemoteDataSource implements ProfileRemoteDataSource {
 String? _text(Map<dynamic, dynamic> json, List<String> keys) {
   for (final key in keys) {
     final value = json[key];
-    if (value is String && value.trim().isNotEmpty) return value.trim();
+    if (value is String) {
+      final normalized = value.trim();
+      if (normalized.isNotEmpty && !normalized.contains('*')) {
+        return normalized;
+      }
+    }
   }
   return null;
 }
+
+bool _canReadEmployee(List<String> permissions) =>
+    permissions.contains('employee:read') || permissions.contains('employee:*');
 
 String? _nestedText(
   Map<String, dynamic> json,

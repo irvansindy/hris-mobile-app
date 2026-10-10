@@ -6,12 +6,12 @@ class AttendanceHistoryPage {
     required this.page,
     required this.totalPages,
     required this.total,
+    required this.hasNextPage,
   });
 
   final List<AttendanceEntity> items;
   final int page;
   final int totalPages;
   final int total;
-
-  bool get hasNextPage => page < totalPages;
+  final bool hasNextPage;
 }
