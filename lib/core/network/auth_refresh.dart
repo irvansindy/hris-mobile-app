@@ -223,6 +223,7 @@ class AuthRefreshCoordinator {
         }
         _credentialRevision++;
       });
+      if (!lifecycle.isCurrent(revision)) return;
       if (updatedSession case final nextSession?) {
         onSessionUpdated?.call(Map.unmodifiable(nextSession));
       }

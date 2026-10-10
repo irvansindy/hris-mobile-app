@@ -73,6 +73,42 @@ void main() {
   });
 
   _localTest(
+    'logout during refresh storage write cannot publish old session',
+    () async {
+      final gatedStorage = _GatedSecureStorage();
+      final fixture = await _Server.start(secureStorage: gatedStorage);
+      final published = <Map<String, dynamic>>[];
+      final subscription = fixture.container.listen(refreshedSessionProvider, (
+        _,
+        next,
+      ) {
+        if (next != null) published.add(next);
+      });
+      addTearDown(subscription.close);
+      final request = fixture.dio
+          .get<dynamic>('/one')
+          .then<Object?>(
+            (response) => response,
+            onError: (Object error) => error,
+          );
+      await gatedStorage.writeStarted.future.timeout(
+        const Duration(seconds: 3),
+      );
+      fixture.container.read(requestContextProvider.notifier).state = null;
+      final logout = fixture.container.read(authRepositoryProvider).logout();
+      gatedStorage.releaseWrite.complete();
+      await request;
+      await logout;
+
+      expect(published, isEmpty);
+      expect(fixture.container.read(requestContextProvider), isNull);
+      expect(await fixture.storage.readAccessToken(), isNull);
+      expect(await fixture.storage.readSession(), isNull);
+      expect(fixture.calls('/one'), 1);
+    },
+  );
+
+  _localTest(
     'concurrent 401 across auth and feature clients shares one refresh',
     () async {
       final fixture = await _Server.start();
@@ -550,12 +586,44 @@ void _localTest(String name, Future<void> Function() body) => test(
 
 class _LocalHttpOverrides extends HttpOverrides {}
 
+class _GatedSecureStorage extends FlutterSecureStorage {
+  final writeStarted = Completer<void>();
+  final releaseWrite = Completer<void>();
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (key == 'hrms.access_token' && value == 'new-access') {
+      writeStarted.complete();
+      await releaseWrite.future;
+    }
+    await super.write(
+      key: key,
+      value: value,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+}
+
 class _Server {
-  _Server(this.server, this.container, this.cookieAuth);
+  _Server(this.server, this.container, this.cookieAuth, this.storage);
   final HttpServer server;
   final ProviderContainer container;
   final bool cookieAuth;
-  final storage = const SecureTokenStorage(FlutterSecureStorage());
+  final SecureTokenStorage storage;
   final requests =
       <
         ({
@@ -597,9 +665,10 @@ class _Server {
   static Future<_Server> start({
     bool cookieAuth = false,
     Duration timeout = const Duration(seconds: 2),
+    FlutterSecureStorage secureStorage = const FlutterSecureStorage(),
   }) async {
     FlutterSecureStorage.setMockInitialValues({});
-    const storage = SecureTokenStorage(FlutterSecureStorage());
+    final storage = SecureTokenStorage(secureStorage);
     if (!cookieAuth) {
       await storage.saveTokens(
         accessToken: 'old-access',
@@ -656,7 +725,7 @@ class _Server {
       activeCompanyId: 'company-A',
       companyScope: ['company-A'],
     );
-    final fixture = _Server(server, container, cookieAuth);
+    final fixture = _Server(server, container, cookieAuth, storage);
     server.listen(fixture._handle);
     addTearDown(() async {
       container.dispose();
