@@ -131,4 +131,4 @@
 
 Coverage spec: registration/pagination Task 1; dummy/config Task 2; session/rotation/logout Task 3; tap/status/simulator Task 4; quality/report/live gate Task 5. Signature dan mode konsisten antartask. Firebase initialization serta delivery sengaja dikecualikan berdasarkan revisi pengguna, bukan ditandai selesai.
 
-Rencana menunggu review pengguna. Metode pelaksanaan: native/inline dalam sesi ini, satu task per urutan, kemudian satu final review independen. Implementasi belum dimulai.
+Task 1 sampai 5 telah dijalankan secara native/inline pada checkout aktif yang disetujui. Review akhir independen dilakukan sekali; dua important finding dan satu bug navigasi emulator diperbaiki melalui regression test. Hasil lokal dan batas acceptance live dicatat dalam `docs/Tahap 6 Push Notification dan Deep Link.md`; Firebase/APNs dan inbox server terautentikasi masih tertunda.

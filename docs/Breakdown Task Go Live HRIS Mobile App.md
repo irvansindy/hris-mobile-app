@@ -150,10 +150,17 @@ serta acceptance Android/iOS.
 - [ ] Sediakan Firebase Android/iOS untuk setiap environment.
 - [ ] Registrasikan installation ID, platform, provider, dan token melalui `/notifications/device-tokens` setelah login/refresh token FCM.
 - [ ] Hapus registration saat logout dan tangani token rotation/reinstall.
-- [ ] Implementasikan list, unread count, read, read-all, delete, serta deep link hanya ke route yang diizinkan.
+- [x] Implementasikan list, unread count, read, read-all, delete, serta deep link hanya ke route yang diizinkan (verifikasi lokal; acceptance live terpisah).
 - [ ] Uji foreground, background, terminated, duplicate notification, dan account switch.
 
 **Exit gate:** Push staging diterima pada Android/iOS dan tidak membuka data tenant/account lain.
+
+Task 1 sampai 5 selesai untuk scope dummy/local: 619 test lulus, analyzer
+0 issue, format bersih, APK debug berhasil, dan simulator diuji pada emulator.
+Login emulator non-demo mendapat 401 sehingga inbox server terautentikasi
+belum diterima. Firebase/APNs dan exit gate OS live tetap tertunda, bukan PASS.
+Lihat `docs/Tahap 6 Push Notification dan Deep Link.md` dan
+`docs/Tahap 6 Acceptance Push Live Tertunda.md` untuk bukti dan checklist lanjut.
 
 ## Tahap 7 — Quality, Security, Privacy, dan Performance Gate (P0)
 

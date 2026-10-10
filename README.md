@@ -63,6 +63,22 @@ Authentication is connected to the HRMS reference API configured by
 `BASE_URL`. The repository's HTTP endpoint is a development-only fallback and
 cannot start a release/profile build.
 
+## Local push simulator
+
+```bash
+rtk flutter run --dart-define=DEMO_MODE=true
+rtk flutter run --dart-define-from-file=.env --dart-define=PUSH_MODE=dummy
+```
+
+The second command uses server repositories with local push simulation and
+requires a valid login. Dummy registration stays local; it does not send sample
+tokens to the API or test Firebase/APNs delivery. `PUSH_MODE` defaults to
+`disabled`; dummy is debug-only and rejected in profile/release builds.
+
+See [local verification report](docs/Tahap%206%20Push%20Notification%20dan%20Deep%20Link.md)
+and [pending live acceptance](docs/Tahap%206%20Acceptance%20Push%20Live%20Tertunda.md).
+Real Firebase configuration remains pending; local success is not release approval.
+
 ## Flutter resources
 
 This project is a starting point for a Flutter application.

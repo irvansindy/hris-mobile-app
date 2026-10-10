@@ -36,6 +36,42 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  test(
+    'adapter ID-less tap batch opens inbox once, next event turn can retry',
+    () async {
+      final prefs = await SharedPreferences.getInstance();
+      final store = DemoStore(prefs);
+      await store.load();
+      final locations = <String>[];
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          appConfigProvider.overrideWithValue(
+            AppConfig.fromEnvironment(productionBuild: false),
+          ),
+          ...demoOverrides(store),
+          pushNavigateProvider.overrideWithValue(locations.add),
+          featureDioProvider.overrideWith(
+            (_) => throw StateError('No dummy HTTP'),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(pushLifecycleProvider);
+      await container.read(authControllerProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      final adapter = container.read(pushAdapterProvider) as DummyPushAdapter;
+      adapter.emit(const PushEvent(kind: PushEventKind.initial));
+      adapter.emit(const PushEvent(kind: PushEventKind.opened));
+      await Future<void>.delayed(Duration.zero);
+      expect(locations, ['/notifications']);
+      await Future<void>.delayed(Duration.zero);
+      adapter.emit(const PushEvent(kind: PushEventKind.opened));
+      await Future<void>.delayed(Duration.zero);
+      expect(locations, ['/notifications', '/notifications']);
+    },
+  );
+
   testWidgets(
     'real app route uses simulator hint but never opens payslip or payload URL',
     (tester) async {
@@ -85,6 +121,21 @@ void main() {
         '/notifications',
       );
       expect(find.byType(NotificationsScreen), findsOneWidget);
+      await tester.drag(find.byType(ListView).first, const Offset(0, 1000));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Kembali'));
+      await tester.pumpAndSettle();
+      expect(
+        container
+            .read(appRouterProvider)
+            .routeInformationProvider
+            .value
+            .uri
+            .path,
+        '/home',
+      );
+      container.read(appRouterProvider).go('/notifications');
+      await tester.pumpAndSettle();
       repo.items = [
         const NotificationItem(
           id: 'n2',

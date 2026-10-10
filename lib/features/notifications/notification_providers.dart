@@ -26,11 +26,13 @@ final notificationInboxProvider =
 class NotificationInboxController
     extends AutoDisposeAsyncNotifier<NotificationInbox> {
   int _generation = 0;
+  bool _reloadBeforeMore = false;
   late FeatureSession _session;
 
   @override
   Future<NotificationInbox> build() async {
     _session = ref.watch(featureSessionProvider);
+    _reloadBeforeMore = false;
     _generation++;
     ref.onDispose(() => _generation++);
     final repo = ref.watch(notificationRepositoryProvider);
@@ -46,7 +48,8 @@ class NotificationInboxController
       return;
     }
     final generation = ++_generation;
-    final page = loadMore ? previous!.page + 1 : 1;
+    final append = loadMore && !_reloadBeforeMore;
+    final page = append ? previous!.page + 1 : 1;
     final repo = ref.read(notificationRepositoryProvider);
     if (previous == null) {
       state = const AsyncLoading();
@@ -57,13 +60,14 @@ class NotificationInboxController
       final result = await repo.load(page: page);
       if (!session.isCurrent || generation != _generation) return;
       final byId = <String, NotificationItem>{
-        if (loadMore)
+        if (append)
           for (final item in previous!.items) item.id: item,
         for (final item in result.items) item.id: item,
       };
       state = AsyncData(
         _inbox(result, items: byId.values.toList(growable: false)),
       );
+      _reloadBeforeMore = false;
       ref.invalidate(notificationUnreadCountProvider);
     } catch (error, stack) {
       if (!session.isCurrent || generation != _generation) return;
@@ -142,6 +146,8 @@ class NotificationInboxController
     try {
       await repo.delete(id);
       if (!session.isCurrent || generation != _generation) return false;
+      // Deletion shifts server page offsets; next load must restart at page 1.
+      _reloadBeforeMore = true;
       state = AsyncData(previous.copyWith(items: optimisticItems));
       ref.invalidate(notificationUnreadCountProvider);
       return true;

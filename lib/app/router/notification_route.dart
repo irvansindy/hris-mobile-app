@@ -55,6 +55,13 @@ class NotificationRoute extends ConsumerWidget {
     final session = ref.watch(featureSessionProvider);
     return NotificationsScreen(
       pushStatusPanel: const PushStatusPanel(),
+      onBack: () {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/home');
+        }
+      },
       onOpenResource: (item) {
         if (!session.isCurrent) return;
         final location = notificationResourceLocation(item);

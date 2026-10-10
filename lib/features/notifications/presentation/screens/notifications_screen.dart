@@ -15,9 +15,11 @@ class NotificationsScreen extends ConsumerStatefulWidget {
     super.key,
     this.onOpenResource,
     this.pushStatusPanel,
+    this.onBack,
   });
   final ValueChanged<NotificationItem>? onOpenResource;
   final Widget? pushStatusPanel;
+  final VoidCallback? onBack;
   @override
   ConsumerState<NotificationsScreen> createState() =>
       _NotificationsScreenState();
@@ -73,7 +75,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                       ),
                     ),
                     tooltip: 'Kembali',
-                    onPressed: () => Navigator.of(context).maybePop(),
+                    onPressed:
+                        widget.onBack ?? () => Navigator.of(context).maybePop(),
                     icon: const Icon(Icons.chevron_left_rounded),
                   ),
                   const SizedBox(width: 8),

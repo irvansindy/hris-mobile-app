@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:hrm_app/app/router/notification_route.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/features/notifications/domain/repositories/notification_repository.dart';
@@ -19,6 +21,7 @@ class PushNavigation {
   bool _disposed = false;
   int _generation = 0;
   int _tap = 0;
+  Timer? _anonymousBatch;
 
   Future<void> updateSession(FeatureSession? session) async {
     if (_disposed) return;
@@ -32,6 +35,8 @@ class PushNavigation {
       return;
     }
     _generation++;
+    _anonymousBatch?.cancel();
+    _anonymousBatch = null;
     _seen.clear();
     if (previous != null) {
       _pending = null;
@@ -70,6 +75,10 @@ class PushNavigation {
       if (validPushHint(event.notificationId))
         'notification:${event.notificationId}',
     ];
+    if (keys.isEmpty) {
+      if (_anonymousBatch != null) return;
+      _anonymousBatch = Timer(Duration.zero, () => _anonymousBatch = null);
+    }
     if (keys.any(_seen.contains)) return;
     _seen.addAll(keys);
     while (_seen.length > 100) {
@@ -102,6 +111,8 @@ class PushNavigation {
 
   void reset() {
     _generation++;
+    _anonymousBatch?.cancel();
+    _anonymousBatch = null;
     _session = null;
     _pending = null;
     _acceptAnonymous = false;

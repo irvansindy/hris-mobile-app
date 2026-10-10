@@ -90,6 +90,77 @@ void main() {
       await expectLater(repo.load(limit: 50), throwsFormatException);
     });
   }
+  for (final size in [51, 101]) {
+    test(
+      'delete rebases offset pagination without skipping item $size',
+      () async {
+        final repo = _MutablePages(size);
+        final container = ProviderContainer(
+          overrides: [notificationRepositoryProvider.overrideWithValue(repo)],
+        );
+        addTearDown(container.dispose);
+        final sub = container.listen(notificationInboxProvider, (_, _) {});
+        addTearDown(sub.close);
+        await container.read(notificationInboxProvider.future);
+        final controller = container.read(notificationInboxProvider.notifier);
+        if (size == 101) await controller.refresh(loadMore: true);
+        expect(await controller.delete('n1'), isTrue);
+        repo.failLoad = true;
+        await controller.refresh(loadMore: true);
+        var inbox = container.read(notificationInboxProvider).requireValue;
+        expect(inbox.items.any((item) => item.id == 'n1'), isFalse);
+        expect(inbox.actionError, isNotNull);
+        repo.failLoad = false;
+        await controller.refresh(loadMore: true);
+        inbox = container.read(notificationInboxProvider).requireValue;
+        while (inbox.canLoadMore) {
+          await controller.refresh(loadMore: true);
+          inbox = container.read(notificationInboxProvider).requireValue;
+        }
+        expect(inbox.items, hasLength(size - 1));
+        expect(inbox.items.last.id, 'n$size');
+        expect(inbox.items.any((item) => item.id == 'n1'), isFalse);
+        expect(repo.pages, size == 51 ? [1, 1, 1] : [1, 2, 1, 1, 2]);
+        expect(inbox.total, size - 1);
+      },
+    );
+  }
+}
+
+class _MutablePages implements NotificationRepository {
+  _MutablePages(int count)
+    : items = List.generate(
+        count,
+        (index) => NotificationItem(
+          id: 'n${index + 1}',
+          title: 'Notice',
+          isRead: false,
+        ),
+      );
+  final List<NotificationItem> items;
+  final pages = <int>[];
+  bool failLoad = false;
+  @override
+  Future<NotificationPage> load({int page = 1, int limit = 50}) async {
+    pages.add(page);
+    if (failLoad) throw StateError('offline');
+    return NotificationPage(
+      items: items.skip((page - 1) * limit).take(limit).toList(),
+      page: page,
+      total: items.length,
+      totalPages: (items.length / limit).ceil(),
+    );
+  }
+
+  @override
+  Future<void> delete(String id) async =>
+      items.removeWhere((item) => item.id == id);
+  @override
+  Future<int> unreadCount() async => items.length;
+  @override
+  Future<void> read(List<String> ids) async {}
+  @override
+  Future<void> readAll() async {}
 }
 
 class _Pages implements HttpClientAdapter {
