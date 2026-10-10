@@ -23,6 +23,7 @@ void main() {
     );
     expect(workflow, contains('flutter analyze'));
     expect(workflow, contains('flutter test --coverage'));
+    expect(workflow, contains('test/core/platform_backup_policy_test.dart'));
     expect(workflow, contains('path: test/failures'));
     expect(workflow, isNot(contains('--update-goldens')));
   });
@@ -30,7 +31,7 @@ void main() {
   test('CI pins Flutter and builds a guarded production artifact', () {
     expect(
       workflow,
-      contains('FLUTTER_VERSION: 2553f89be1efa62eeb7b3aeea68fc9f80336ee54'),
+      contains('FLUTTER_VERSION: 19946f91c8d9de18a4674460d015229cc0b2534f'),
     );
     expect(workflow, contains('flutter build appbundle --release'));
     expect(

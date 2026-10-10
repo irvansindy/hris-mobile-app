@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: 2553f89be1efa62eeb7b3aeea68fc9f80336ee54
+  FLUTTER_VERSION: 19946f91c8d9de18a4674460d015229cc0b2534f
 
 jobs:
   quality:
@@ -51,6 +51,7 @@ jobs:
           flutter test
           test/core/app_config_test.dart
           test/core/transport_configuration_test.dart
+          test/core/platform_backup_policy_test.dart
           test/features/safety/no_demo_ui_test.dart
 
       - name: Run test suite with coverage
