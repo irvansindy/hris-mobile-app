@@ -50,6 +50,25 @@ void main() {
     );
   });
 
+  test('Android CI runs the credential-free device integration flow', () {
+    final jobs = (loadYaml(workflow) as YamlMap)['jobs'] as YamlMap;
+    final steps = (jobs['android'] as YamlMap)['steps'] as YamlList;
+    final integration = steps.cast<YamlMap>().singleWhere(
+      (step) => step['name'] == 'Run Android fixture integration tests',
+    );
+    expect(integration['uses'], 'reactivecircus/android-emulator-runner@v2');
+    final settings = integration['with'] as YamlMap;
+    expect(settings['api-level'], 35);
+    expect(settings['arch'], 'x86_64');
+    expect(
+      settings['script'],
+      contains('integration_test/redesign_flow_test.dart'),
+    );
+    expect(settings['script'], contains('-d emulator-5554'));
+    expect(settings['script'], isNot(contains('.env')));
+    expect(settings['script'], isNot(contains('hris-mobile-smoke.json')));
+  });
+
   test(
     'iOS build validates production on macOS without distribution signing',
     () {
