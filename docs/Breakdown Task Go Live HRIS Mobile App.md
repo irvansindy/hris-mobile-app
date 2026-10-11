@@ -166,12 +166,19 @@ Lihat `docs/Tahap 6 Push Notification dan Deep Link.md` dan
 
 **Owner:** Mobile + QA + Security
 
-- [ ] Jalankan format, analyzer, seluruh unit/widget/contract/golden/integration test dan Android build di CI.
-- [ ] Tambahkan macOS CI untuk build iOS tanpa signing dan validasi CocoaPods.
-- [ ] Jalankan regression demo dan production repository pada light/dark, text scaling, locale, empty/loading/error, dan reduced motion.
-- [ ] Audit secure storage, TLS, cleartext policy, PII masking, screenshot/log exposure, dependency vulnerability, dan privacy disclosure.
+- [x] Integrasikan baseline lokal tahap sebelumnya, selaraskan pin SDK CI, dan tambahkan Android fixture integration ke workflow.
+- [ ] Konfirmasi hasil remote CI untuk format, analyzer, seluruh unit/widget/contract/golden/integration test dan Android build.
+- [x] Konfigurasikan macOS CI untuk build iOS tanpa signing (job sudah tersedia).
+- [ ] Jalankan job macOS dan validasi dependency resolution/build native iOS.
+- [x] Jalankan regression lokal demo/production, light/dark, text scaling, empty/loading/error, serta locale perangkat dan reduced motion. Locale aplikasi tetap Indonesia.
+- [x] Audit Flutter/platform configuration: secure storage, TLS/cleartext, network log, privacy disclosure; perbaiki Android backup dan race refresh/logout.
+- [x] Query advisory OSV untuk 188 dependency hosted Pub terkunci; tidak ada advisory yang dikembalikan saat audit.
+- [ ] Tutup acceptance screenshot/backup/Keychain native, audit dependency native, consent/retensi server, dan privacy declaration distribusi.
 - [ ] Ukur startup, jank, memory, ukuran APK/IPA, serta camera/location battery impact pada perangkat kelas target.
 - [ ] Tutup warning plugin/Kotlin yang mengancam build Flutter berikutnya.
+
+Report lokal: [Tahap 7 Quality Security Privacy dan Performance](Tahap%207%20Quality%20Security%20Privacy%20dan%20Performance.md).
+Gate tertunda: [Tahap 7 Acceptance Release Gate Tertunda](Tahap%207%20Acceptance%20Release%20Gate%20Tertunda.md).
 
 **Exit gate:** Full CI hijau dari checkout bersih; tidak ada defect P0/P1 atau temuan security kritis/tinggi.
 
