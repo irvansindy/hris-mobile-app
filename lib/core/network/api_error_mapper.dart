@@ -42,6 +42,19 @@ Failure mapApiException(ApiException error) => switch (error.code) {
     fieldErrors: error.fieldErrors,
   ),
   'TOO_MANY_REQUESTS' => _rateLimitFailure(error),
+  'PAYROLL_UNLOCK_REQUIRED' ||
+  'PAYROLL_REAUTH_FAILED' ||
+  'PAYSLIP_PIN_REAUTH_FAILED' ||
+  'PAYSLIP_PIN_INVALID' ||
+  'PAYSLIP_PIN_NOT_SET' ||
+  'PAYSLIP_UNLOCK_INVALID' ||
+  'PAYSLIP_PDF_TOO_LARGE' ||
+  'PAYSLIP_PIN_LOCKED' => ServerFailure(
+    error.message,
+    statusCode: error.statusCode,
+    code: error.code,
+    fieldErrors: error.fieldErrors,
+  ),
   _ when error.statusCode == 401 => AuthenticationFailure(
     error.message,
     code: error.code,

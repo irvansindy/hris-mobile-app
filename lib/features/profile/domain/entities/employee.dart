@@ -1,6 +1,7 @@
 class Employee {
   const Employee({
     required this.id,
+    this.employeeNumber,
     required this.name,
     required this.role,
     required this.department,
@@ -14,6 +15,7 @@ class Employee {
   });
 
   final String id;
+  final String? employeeNumber;
   final String name;
   final String role;
   final String department;

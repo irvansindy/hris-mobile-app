@@ -43,14 +43,44 @@ class WorkflowApprovalPage {
     required this.page,
     required this.totalPages,
     required this.total,
+    this.hasNextPage,
   });
 
   final List<WorkflowApproval> items;
   final int page;
   final int totalPages;
   final int total;
+  final bool? hasNextPage;
 
-  bool get hasMore => page < totalPages;
+  bool get hasMore => hasNextPage ?? page < totalPages;
+}
+
+class WorkflowApprovalDetail {
+  const WorkflowApprovalDetail({
+    required this.instanceId,
+    required this.companyId,
+    required this.referenceType,
+    required this.referenceId,
+    required this.approvalType,
+    required this.status,
+    required this.currentLevel,
+    required this.submittedAt,
+    required this.subjectEmployeeIds,
+    this.requesterId,
+    this.requesterLabel,
+  });
+
+  final String instanceId;
+  final String companyId;
+  final String referenceType;
+  final String referenceId;
+  final String approvalType;
+  final String status;
+  final int currentLevel;
+  final DateTime submittedAt;
+  final String? requesterId;
+  final String? requesterLabel;
+  final List<String> subjectEmployeeIds;
 }
 
 class WorkflowBulkItemResult {

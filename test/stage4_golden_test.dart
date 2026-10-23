@@ -21,6 +21,8 @@ import 'package:hrm_app/features/profile/domain/entities/employee.dart';
 import 'package:hrm_app/features/profile/domain/repositories/profile_repository.dart';
 import 'package:hrm_app/features/profile/presentation/screens/profile_screen.dart';
 import 'package:hrm_app/features/profile/profile_dependencies.dart';
+import 'package:hrm_app/features/profile/domain/entities/employee_support.dart';
+import 'package:hrm_app/features/profile/domain/repositories/employee_support_repository.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -72,6 +74,9 @@ void main() {
                     _Notifications(),
                   ),
                   profileRepositoryProvider.overrideWithValue(_Profile()),
+                  employeeSupportRepositoryProvider.overrideWithValue(
+                    const _EmployeeSupport(),
+                  ),
                   appVersionProvider.overrideWith(
                     (ref) async => 'Fixture build',
                   ),
@@ -108,6 +113,20 @@ void main() {
   }
 }
 
+class _EmployeeSupport implements EmployeeSupportRepository {
+  const _EmployeeSupport();
+
+  @override
+  Future<EmployeeSupportSnapshot> load() async => const EmployeeSupportSnapshot(
+    reportingLine: ReportingLine(
+      source: 'POSITION_REPORTS_TO',
+      alternateSupervisors: [],
+    ),
+    attachments: [],
+    canReadAttachments: true,
+  );
+}
+
 class _Dashboard implements DashboardRepository {
   @override
   DashboardSnapshot get current => const DashboardSnapshot(
@@ -124,7 +143,7 @@ class _Dashboard implements DashboardRepository {
   Future<DashboardSnapshot> refresh() async => current;
 }
 
-class _Calendar implements CalendarRepository {
+class _Calendar extends CalendarRepository {
   @override
   CalendarData get current => CalendarData(
     focusedDate: DateTime(2026, 9, 14),
@@ -162,23 +181,29 @@ class _Notifications implements NotificationRepository {
   Future<void> delete(String id) async {}
 
   @override
-  Future<List<NotificationItem>> load({required int limit}) async => const [
-    NotificationItem(
-      id: 'fixture-notification-1',
-      title: 'Fixture approval',
-      message: 'Fixture, bukan notifikasi server.',
-      isRead: false,
-      type: 'SUCCESS',
-      action: 'approved',
-      resource: 'leave',
-    ),
-    NotificationItem(
-      id: 'fixture-notification-2',
-      title: 'Fixture informasi',
-      message: 'Fixture untuk regresi tampilan inbox.',
-      isRead: true,
-    ),
-  ];
+  Future<NotificationPage> load({int page = 1, int limit = 50}) async =>
+      NotificationPage(
+        page: page,
+        totalPages: 1,
+        total: 2,
+        items: const [
+          NotificationItem(
+            id: 'fixture-notification-1',
+            title: 'Fixture approval',
+            message: 'Fixture, bukan notifikasi server.',
+            isRead: false,
+            type: 'SUCCESS',
+            action: 'approved',
+            resource: 'leave',
+          ),
+          NotificationItem(
+            id: 'fixture-notification-2',
+            title: 'Fixture informasi',
+            message: 'Fixture untuk regresi tampilan inbox.',
+            isRead: true,
+          ),
+        ],
+      );
   @override
   Future<int> unreadCount() async => 1;
   @override

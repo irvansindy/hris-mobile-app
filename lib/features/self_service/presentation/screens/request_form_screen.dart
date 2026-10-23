@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -28,7 +26,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
   final _reasonController = TextEditingController();
   DateTimeRange? _range;
   String? _type;
-  String? _attachment;
+  RequestAttachment? _attachment;
   String? _attachmentName;
   String? _error;
   String? _attemptKey;
@@ -46,12 +44,12 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(featureSessionProvider);
+    final submissionBlocker = ref
+        .watch(requestRepositoryProvider)
+        .submissionBlocker(widget.kind);
     final canCreate =
         !_isLeave ||
-        ref
-                .watch(requestContextProvider)
-                ?.permissions
-                .contains('leave:create') ==
+        ref.watch(requestContextProvider)?.hasPermission('leave:create') ==
             true;
     if (!canCreate) {
       return Scaffold(
@@ -70,6 +68,30 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
                   kind: AppViewStateKind.permission,
                   title: 'Akses pengajuan tidak tersedia',
                   message: 'Akun ini tidak memiliki izin leave:create.',
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (submissionBlocker != null) {
+      return Scaffold(
+        body: SafeArea(
+          minimum: const EdgeInsets.all(AppSpacing.screenHorizontal),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const AppDetailHeader(
+                title: 'Ajukan izin',
+                subtitle: 'Pengajuan baru',
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Expanded(
+                child: AppStateView(
+                  kind: AppViewStateKind.empty,
+                  title: 'Pengajuan izin belum tersedia',
+                  message: submissionBlocker,
                 ),
               ),
             ],
@@ -99,8 +121,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
               const SizedBox(height: AppSpacing.lg),
               AppSectionHeader(
                 title: _isLeave ? 'Detail cuti' : 'Detail izin',
-                description:
-                    'Semua tanggal dan status akhir divalidasi server.',
+                description: 'Tanggal dan status akhir divalidasi sistem.',
               ),
               const SizedBox(height: AppSpacing.md),
               if (_isLeave)
@@ -112,8 +133,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
                   error: (_, _) => AppStateView(
                     kind: AppViewStateKind.error,
                     title: 'Jenis cuti gagal dimuat',
-                    message:
-                        'Form belum dapat dikirim tanpa jenis cuti server.',
+                    message: 'Form belum dapat dikirim tanpa jenis cuti aktif.',
                     actionLabel: 'Coba lagi',
                     onAction: () => ref.invalidate(leaveTypesProvider(session)),
                   ),
@@ -121,8 +141,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
                       ? const AppStateView(
                           kind: AppViewStateKind.empty,
                           title: 'Jenis cuti belum tersedia',
-                          message:
-                              'Server tidak mengembalikan jenis cuti aktif.',
+                          message: 'Belum ada jenis cuti aktif untuk akun ini.',
                         )
                       : DropdownButtonFormField<String>(
                           initialValue: _type,
@@ -218,7 +237,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
               if (_range != null) ...[
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  'Estimasi ${_workingDays(_range!)} hari kerja Senin sampai Jumat. Hari libur dan hasil akhir ditentukan server.',
+                  'Estimasi ${_workingDays(_range!)} hari kerja Senin sampai Jumat. Hari libur dan hasil akhir ditentukan sistem.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -337,11 +356,8 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
       if (file == null || !mounted) return;
       final bytes = await file.readAsBytes();
       if (!mounted) return;
-      final extension = file.name.toLowerCase().endsWith('.png')
-          ? 'png'
-          : 'jpeg';
       setState(() {
-        _attachment = 'data:image/$extension;base64,${base64Encode(bytes)}';
+        _attachment = RequestAttachment(fileName: file.name, bytes: bytes);
         _attachmentName = file.name;
       });
     } catch (_) {
@@ -377,7 +393,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Kirim pengajuan?'),
         content: Text(
-          '${_date(_range!.start)} sampai ${_date(_range!.end)}. Setelah dikirim, status mengikuti keputusan server.',
+          '${_date(_range!.start)} sampai ${_date(_range!.end)}. Setelah dikirim, status mengikuti proses persetujuan.',
         ),
         actions: [
           TextButton(
@@ -418,7 +434,7 @@ class _RequestFormScreenState extends ConsumerState<RequestFormScreen> {
       ref.invalidate(requestPageProvider);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pengajuan ${result.id} tersimpan di server.')),
+        SnackBar(content: Text('Pengajuan ${result.id} berhasil disimpan.')),
       );
       Navigator.pop(context, result.id);
     } on ApiException catch (error) {

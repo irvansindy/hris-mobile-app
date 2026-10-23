@@ -226,6 +226,48 @@ class TravelSnapshot {
   final List<ExpenseClaim> claims;
 }
 
+enum AssetAssignmentStatus { active, returned, all }
+
+class EmployeeAsset {
+  const EmployeeAsset({
+    required this.assignmentId,
+    required this.assetId,
+    required this.code,
+    required this.name,
+    required this.status,
+    this.serialNumber,
+    this.branchId,
+    this.assignedAt,
+    this.returnedAt,
+    this.condition,
+  });
+
+  final String assignmentId;
+  final String assetId;
+  final String code;
+  final String name;
+  final String status;
+  final String? serialNumber;
+  final String? branchId;
+  final DateTime? assignedAt;
+  final DateTime? returnedAt;
+  final String? condition;
+}
+
+class AssetPage {
+  const AssetPage({
+    required this.items,
+    required this.page,
+    required this.total,
+    required this.hasNextPage,
+  });
+
+  final List<EmployeeAsset> items;
+  final int page;
+  final int total;
+  final bool hasNextPage;
+}
+
 class CreateLoanCommand {
   const CreateLoanCommand({
     required this.loanTypeId,
@@ -305,8 +347,8 @@ class CreateTripCommand {
 }
 
 class ReceiptUpload {
-  const ReceiptUpload({required this.filePath, required this.originalName});
-  final String filePath;
+  const ReceiptUpload({required this.referenceUrl, required this.originalName});
+  final String referenceUrl;
   final String originalName;
 }
 

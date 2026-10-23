@@ -47,6 +47,80 @@ void main() {
     );
   });
 
+  test('feature presentation never imports demo implementations', () {
+    final violations = <String>[];
+    for (final file in _dartFiles('lib/features')) {
+      if (!file.path.contains('/presentation/')) continue;
+      if (file.readAsStringSync().contains('package:hrm_app/demo/')) {
+        violations.add(file.path);
+      }
+    }
+
+    expect(
+      violations,
+      isEmpty,
+      reason: 'Presentation must receive domain data, not demo widgets',
+    );
+  });
+
+  test('feature presentation never selects structure from demo mode', () {
+    const forbidden = [
+      'demoModeProvider',
+      'demoToolsBuilderProvider',
+      'demoHomeSectionsBuilderProvider',
+      'demoAttendanceSummaryBuilderProvider',
+      'demoRequestsBuilderProvider',
+    ];
+    final violations = <String>[];
+    for (final file in _dartFiles('lib/features')) {
+      if (!file.path.contains('/presentation/')) continue;
+      final source = file.readAsStringSync();
+      if (forbidden.any(source.contains)) violations.add(file.path);
+    }
+
+    expect(
+      violations,
+      isEmpty,
+      reason: 'Presentation structure must not depend on demo mode',
+    );
+  });
+
+  test('attendance presentation does not select a demo layout', () {
+    final violations = <String>[];
+    for (final file in _dartFiles('lib/features/attendance/presentation')) {
+      final source = file.readAsStringSync();
+      if (source.contains('demoModeProvider') ||
+          source.contains('demoAttendanceSummaryBuilderProvider')) {
+        violations.add(file.path);
+      }
+    }
+
+    expect(
+      violations,
+      isEmpty,
+      reason: 'Attendance layout must be driven by domain data and capability',
+    );
+  });
+
+  test('self-service presentation does not select a demo layout', () {
+    const forbidden = [
+      'demoModeProvider',
+      'demoRequestsBuilderProvider',
+      'package:hrm_app/demo/',
+    ];
+    final violations = <String>[];
+    for (final file in _dartFiles('lib/features/self_service/presentation')) {
+      final source = file.readAsStringSync();
+      if (forbidden.any(source.contains)) violations.add(file.path);
+    }
+
+    expect(
+      violations,
+      isEmpty,
+      reason: 'Pengajuan layout must be driven by repository data only',
+    );
+  });
+
   test('features do not reach into another feature', () {
     final violations = <String>[];
     final featureImport = RegExp(r'package:hrm_app/features/([^/]+)/');
@@ -65,6 +139,7 @@ void main() {
     const allowed = {
       'package:hrm_app/core/errors/result.dart',
       'package:hrm_app/core/errors/failure.dart',
+      'package:hrm_app/core/network/request_context.dart',
       'package:hrm_app/core/services/location_gateway.dart',
       'package:hrm_app/core/services/selfie_gateway.dart',
     };

@@ -3,13 +3,59 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hrm_app/core/errors/failure.dart';
 import 'package:hrm_app/core/errors/result.dart';
+import 'package:hrm_app/core/network/dio_client.dart';
 import 'package:hrm_app/features/authentication/authentication_dependencies.dart';
+import 'package:hrm_app/features/authentication/authentication_providers.dart';
 import 'package:hrm_app/features/authentication/domain/entities/auth_session.dart';
 import 'package:hrm_app/features/authentication/domain/repositories/auth_repository.dart';
 import 'package:hrm_app/features/authentication/presentation/screens/login_screen.dart';
 import 'package:hrm_app/main.dart';
 
 void main() {
+  test(
+    'rotated session authority is published to the auth controller',
+    () async {
+      final container = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(
+            const _Repository(
+              AuthSession(
+                accessToken: 'old-access',
+                refreshToken: 'old-refresh',
+                userId: 'user-1',
+                employeeId: 'employee-1',
+                companyId: 'company-1',
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(authControllerProvider.future);
+
+      container.read(refreshedSessionProvider.notifier).state = {
+        'accessToken': 'new-access',
+        'refreshToken': 'new-refresh',
+        'id': 'user-1',
+        'employeeId': 'employee-1',
+        'companyId': 'company-1',
+        'companyScope': ['company-1'],
+        'roles': ['MANAGER'],
+        'permissions': ['workflow:approve'],
+        'hasGlobalRole': false,
+        'maxRolePriority': 20,
+        'mustChangePassword': false,
+        'name': 'Updated employee',
+      };
+      await Future<void>.delayed(Duration.zero);
+
+      final session = container.read(authControllerProvider).requireValue;
+      expect(session?.accessToken, 'new-access');
+      expect(session?.permissions, ['workflow:approve']);
+      expect(session?.userName, 'Updated employee');
+    },
+  );
+
   testWidgets('bootstrap blocks shell until mandatory password change', (
     tester,
   ) async {

@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 
 enum AppEnvironment { development, production }
 
+enum PushMode { disabled, dummy, firebase }
+
 class AppConfigException implements Exception {
   const AppConfigException(this.message);
 
@@ -21,6 +23,7 @@ class AppConfig {
     'RECEIVE_TIMEOUT_MS',
   );
   static const _definedLogging = String.fromEnvironment('ENABLE_LOGGING');
+  static const _definedPushMode = String.fromEnvironment('PUSH_MODE');
 
   static const developmentBaseUrl = 'http://srv540825.hstgr.cloud:8084/api/v1';
 
@@ -30,6 +33,7 @@ class AppConfig {
     required this.receiveTimeout,
     required this.enableNetworkLogs,
     this.environment = AppEnvironment.development,
+    this.pushMode = PushMode.disabled,
   });
 
   factory AppConfig.fromEnvironment({
@@ -85,6 +89,11 @@ class AppConfig {
       ),
       enableNetworkLogs: enableNetworkLogs,
       environment: environment,
+      pushMode: _parsePushMode(
+        _value(values, 'PUSH_MODE', _definedPushMode) ?? 'disabled',
+        productionBuild: isProductionBuild,
+        environment: environment,
+      ),
     );
   }
 
@@ -93,6 +102,34 @@ class AppConfig {
   final Duration receiveTimeout;
   final bool enableNetworkLogs;
   final AppEnvironment environment;
+  final PushMode pushMode;
+}
+
+PushMode _parsePushMode(
+  String value, {
+  required bool productionBuild,
+  required AppEnvironment environment,
+}) {
+  final mode = switch (value.toLowerCase()) {
+    'disabled' => PushMode.disabled,
+    'dummy' => PushMode.dummy,
+    'firebase' => PushMode.firebase,
+    _ => throw const AppConfigException(
+      'PUSH_MODE harus disabled, dummy, atau firebase.',
+    ),
+  };
+  if (mode == PushMode.firebase &&
+      (productionBuild || environment != AppEnvironment.development)) {
+    throw const AppConfigException(
+      'PUSH_MODE=firebase sementara hanya tersedia pada development debug Android.',
+    );
+  }
+  if (productionBuild && mode == PushMode.dummy) {
+    throw const AppConfigException(
+      'PUSH_MODE=dummy hanya tersedia pada build debug.',
+    );
+  }
+  return mode;
 }
 
 String? _value(

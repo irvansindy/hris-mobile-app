@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hrm_app/core/network/api_exception.dart';
 import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/features/ess/data/dio_ess_repository.dart';
 import 'package:hrm_app/features/ess/domain/ess_models.dart';
@@ -13,7 +14,17 @@ void main() {
     employeeId: 'employee-1',
     activeCompanyId: 'company-1',
     companyScope: ['company-1'],
-    permissions: ['employee:read'],
+    permissions: [
+      'employee:read',
+      'employee-loan:read',
+      'ewa:create',
+      'ewa:read',
+      'ewa:update',
+      'daily-activity:create',
+      'daily-activity:read',
+      'daily-activity:update',
+      'daily-activity:delete',
+    ],
   );
 
   test(
@@ -176,7 +187,7 @@ void main() {
           category: 'TRANSPORTATION',
           amount: 175000,
           expenseDate: DateTime(2026, 10, 1),
-          receiptFilePath: receipt.filePath,
+          receiptFilePath: receipt.referenceUrl,
         ),
       );
 
@@ -189,7 +200,10 @@ void main() {
       );
       expect(adapter.requests[1].data, isA<FormData>());
       final claim = adapter.requests[2];
-      expect(claim.data['receiptFilePath'], 'company-1/employee-1/receipt.jpg');
+      expect(
+        claim.data['receiptFilePath'],
+        'https://api.example.test/uploads/travel-expenses/receipts/company-1/employee-1/receipt.jpg',
+      );
       expect(claim.data, isNot(contains('ocrExtractedAmount')));
     },
   );
@@ -201,6 +215,57 @@ void main() {
       final repository = DioEssRepository(dio, () => context);
       await expectLater(repository.getLoans(), throwsFormatException);
     }
+  });
+
+  test(
+    'assets use self-service pagination and never send employee identity',
+    () async {
+      final adapter = _EssAdapter();
+      final dio = Dio()..httpClientAdapter = adapter;
+      addTearDown(dio.close);
+
+      final result = await DioEssRepository(
+        dio,
+        () => context,
+      ).getAssets(page: 2, status: AssetAssignmentStatus.all);
+
+      final request = adapter.requests.single;
+      expect(request.path, '/assets/my');
+      expect(request.queryParameters, {
+        'status': 'ALL',
+        'page': 2,
+        'limit': 20,
+      });
+      expect(request.queryParameters, isNot(contains('employeeId')));
+      expect(result.items.single.name, 'Laptop operasional');
+      expect(result.items.single.condition, 'Bekas ringan, masih layak');
+      expect(result.hasNextPage, isTrue);
+    },
+  );
+
+  test('protected ESS mutation is blocked before network access', () async {
+    final adapter = _EssAdapter();
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+    final repository = DioEssRepository(
+      dio,
+      () => const RequestContext(
+        userId: 'user-1',
+        employeeId: 'employee-1',
+        activeCompanyId: 'company-1',
+        companyScope: ['company-1'],
+      ),
+    );
+
+    await expectLater(
+      repository.createEwa(const CreateEwaCommand(amount: 100000)),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 403)
+            .having((error) => error.code, 'code', 'FORBIDDEN'),
+      ),
+    );
+    expect(adapter.requests, isEmpty);
   });
 
   test('loan schedule uses server totals and rows', () async {
@@ -251,8 +316,18 @@ class _EssAdapter implements HttpClientAdapter {
   ) async {
     requests.add(options);
     final data = _data(options);
+    final body = <String, Object?>{'success': true, 'data': data};
+    if (options.path == '/assets/my') {
+      body['meta'] = {
+        'page': 2,
+        'limit': 20,
+        'total': 22,
+        'totalPages': 2,
+        'hasNextPage': true,
+      };
+    }
     return ResponseBody.fromString(
-      jsonEncode({'success': true, 'data': data}),
+      jsonEncode(body),
       options.method == 'POST' ? 201 : 200,
       headers: {
         Headers.contentTypeHeader: ['application/json'],
@@ -260,79 +335,99 @@ class _EssAdapter implements HttpClientAdapter {
     );
   }
 
-  Object? _data(RequestOptions options) =>
-      switch ((options.method, options.path)) {
-        ('GET', '/employee-loans/types') => [
-          {
-            'id': '11111111-1111-1111-1111-111111111111',
-            'name': 'Pinjaman reguler',
-            'maxAmount': '10000000.00',
-            'maxInstallments': 12,
-            'interestRate': '6.00',
-          },
-        ],
-        ('GET', '/employee-loans/my') => [_loan()],
-        ('POST', '/employee-loans') => _loan(),
-        ('PATCH', '/employee-loans/loan-1/cancel') => {
-          ..._loan(),
-          'status': 'CANCELLED',
+  Object? _data(RequestOptions options) => switch ((
+    options.method,
+    options.path,
+  )) {
+    ('GET', '/employee-loans/types') => [
+      {
+        'id': '11111111-1111-1111-1111-111111111111',
+        'name': 'Pinjaman reguler',
+        'maxAmount': '10000000.00',
+        'maxInstallments': 12,
+        'interestRate': '6.00',
+      },
+    ],
+    ('GET', '/employee-loans/my') => [_loan()],
+    ('POST', '/employee-loans') => _loan(),
+    ('PATCH', '/employee-loans/loan-1/cancel') => {
+      ..._loan(),
+      'status': 'CANCELLED',
+    },
+    ('GET', '/employee-loans/loan-1/installments') => [
+      {
+        'id': 'installment-1',
+        'amount': '210000.00',
+        'status': 'PENDING',
+        'dueDate': '2026-10-20T00:00:00.000Z',
+      },
+    ],
+    ('GET', '/employee-loans/loan-1/amortization') => {
+      'principal': 1200000,
+      'totalInterest': 60000,
+      'totalPayment': 1260000,
+      'rows': [
+        {
+          'month': 1,
+          'principal': 200000,
+          'interest': 10000,
+          'total': 210000,
+          'remaining': 1000000,
         },
-        ('GET', '/employee-loans/loan-1/installments') => [
-          {
-            'id': 'installment-1',
-            'amount': '210000.00',
-            'status': 'PENDING',
-            'dueDate': '2026-10-20T00:00:00.000Z',
-          },
-        ],
-        ('GET', '/employee-loans/loan-1/amortization') => {
-          'principal': 1200000,
-          'totalInterest': 60000,
-          'totalPayment': 1260000,
-          'rows': [
-            {
-              'month': 1,
-              'principal': 200000,
-              'interest': 10000,
-              'total': 210000,
-              'remaining': 1000000,
-            },
-          ],
+      ],
+    },
+    ('GET', '/ewa/my/limit') => {
+      'max': '1000000.00',
+      'remaining': '750000.00',
+      'totalApproved': '0.00',
+      'totalReserved': '250000.00',
+      'earnedGrossToDate': '2500000.00',
+    },
+    ('GET', '/ewa/my') => [_ewa()],
+    ('GET', '/ewa/ewa-1') => _ewa(),
+    ('POST', '/ewa') => _ewa(),
+    ('POST', '/ewa/ewa-1/cancel') => {..._ewa(), 'status': 'CANCELLED'},
+    ('GET', '/daily-activities/my') => [_activity()],
+    ('GET', '/daily-activities/activity-1') => _activity(),
+    ('GET', '/employees/employee-1') => {
+      'id': 'employee-1',
+      'companyId': 'company-1',
+      'branch': {'id': 'branch-1', 'name': 'Jakarta'},
+    },
+    ('POST', '/daily-activities') ||
+    ('PUT', '/daily-activities/activity-1') => _activity(),
+    ('DELETE', '/daily-activities/activity-1') => {'id': 'activity-1'},
+    ('GET', '/travel-expenses/categories') => [
+      {'value': 'TRANSPORTATION', 'label': 'Transportasi'},
+    ],
+    ('GET', '/travel-expenses/trips/my') => [_trip()],
+    ('GET', '/travel-expenses/claims/my') => [_claim()],
+    ('GET', '/assets/my') => [
+      {
+        'id': 'assignment-1',
+        ..._identity(),
+        'assignedAt': '2026-01-15T00:00:00.000Z',
+        'conditionAtAssign': 'Bekas ringan, masih layak',
+        'asset': {
+          'id': 'asset-1',
+          'assetCode': 'AST-001',
+          'name': 'Laptop operasional',
+          'serialNumber': 'SERIAL-001',
+          'status': 'ASSIGNED',
+          'branchId': 'branch-1',
         },
-        ('GET', '/ewa/my/limit') => {
-          'max': '1000000.00',
-          'remaining': '750000.00',
-          'totalApproved': '0.00',
-          'totalReserved': '250000.00',
-          'earnedGrossToDate': '2500000.00',
-        },
-        ('GET', '/ewa/my') => [_ewa()],
-        ('GET', '/ewa/ewa-1') => _ewa(),
-        ('POST', '/ewa') => _ewa(),
-        ('POST', '/ewa/ewa-1/cancel') => {..._ewa(), 'status': 'CANCELLED'},
-        ('GET', '/daily-activities/my') => [_activity()],
-        ('GET', '/daily-activities/activity-1') => _activity(),
-        ('GET', '/employees/employee-1') => {
-          'id': 'employee-1',
-          'companyId': 'company-1',
-          'branch': {'id': 'branch-1', 'name': 'Jakarta'},
-        },
-        ('POST', '/daily-activities') ||
-        ('PUT', '/daily-activities/activity-1') => _activity(),
-        ('DELETE', '/daily-activities/activity-1') => {'id': 'activity-1'},
-        ('GET', '/travel-expenses/categories') => [
-          {'value': 'TRANSPORTATION', 'label': 'Transportasi'},
-        ],
-        ('GET', '/travel-expenses/trips/my') => [_trip()],
-        ('GET', '/travel-expenses/claims/my') => [_claim()],
-        ('POST', '/travel-expenses/trips') => _trip(),
-        ('POST', '/travel-expenses/claims/receipt-upload') => {
-          'filePath': 'company-1/employee-1/receipt.jpg',
-          'originalName': 'receipt.jpg',
-        },
-        ('POST', '/travel-expenses/claims') => _claim(),
-        _ => null,
-      };
+      },
+    ],
+    ('POST', '/travel-expenses/trips') => _trip(),
+    ('POST', '/travel-expenses/claims/receipt-upload') => {
+      'filePath': 'company-1/employee-1/receipt.jpg',
+      'url':
+          'https://api.example.test/uploads/travel-expenses/receipts/company-1/employee-1/receipt.jpg',
+      'originalName': 'receipt.jpg',
+    },
+    ('POST', '/travel-expenses/claims') => _claim(),
+    _ => null,
+  };
 
   Map<String, Object?> _identity() => {
     'employeeId': defect == 'foreign-employee' ? 'employee-2' : 'employee-1',

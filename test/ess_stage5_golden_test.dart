@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hrm_app/core/localization/app_localizations.dart';
 import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/features/ess/domain/ess_models.dart';
@@ -60,7 +60,7 @@ void main() {
                 theme: dark ? AppTheme.dark : AppTheme.light,
                 locale: const Locale('id', 'ID'),
                 supportedLocales: const [Locale('id', 'ID')],
-                localizationsDelegates: GlobalMaterialLocalizations.delegates,
+                localizationsDelegates: appLocalizationsDelegates,
                 builder: (context, child) => MediaQuery(
                   data: MediaQuery.of(context).copyWith(
                     padding: const EdgeInsets.only(top: 30, bottom: 20),
@@ -93,6 +93,14 @@ void main() {
 }
 
 class _GoldenEssRepository implements EssRepository {
+  @override
+  Future<AssetPage> getAssets({
+    int page = 1,
+    int limit = 20,
+    AssetAssignmentStatus status = AssetAssignmentStatus.active,
+  }) async =>
+      AssetPage(items: const [], page: page, total: 0, hasNextPage: false);
+
   const _GoldenEssRepository();
 
   @override

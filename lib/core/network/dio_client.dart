@@ -9,11 +9,18 @@ import 'package:hrm_app/core/network/safe_network_log_interceptor.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/security/session_cookie_store.dart';
 import 'package:hrm_app/core/security/token_storage.dart';
+import 'package:uuid/uuid.dart';
 
 final appConfigProvider = Provider<AppConfig>(
   (ref) => throw UnimplementedError(),
 );
 final sessionInvalidationProvider = StateProvider<int>((ref) => 0);
+final refreshedSessionProvider = StateProvider<Map<String, dynamic>?>(
+  (ref) => null,
+);
+final passwordChangeRequiredRevisionProvider = StateProvider<int?>(
+  (ref) => null,
+);
 
 final sessionCookieStoreProvider = Provider<SessionCookieStore>(
   (ref) => SessionCookieStore(
@@ -28,12 +35,41 @@ final authRefreshProvider = Provider<AuthRefreshCoordinator>(
     lifecycle: ref.read(sessionLifecycleProvider),
     config: ref.watch(appConfigProvider),
     cookieStore: ref.watch(sessionCookieStoreProvider),
+    onPasswordChangeRequired: () {
+      ref.read(passwordChangeRequiredRevisionProvider.notifier).state = ref
+          .read(sessionLifecycleProvider)
+          .revision;
+    },
+    onSessionUpdated: (session) {
+      ref.read(refreshedSessionProvider.notifier).state = session;
+      if (ref.read(requestContextProvider) != null) {
+        ref.read(requestContextProvider.notifier).state =
+            RequestContext.fromSessionJson(session);
+      }
+    },
   ),
 );
 
 final dioProvider = Provider<Dio>((ref) => _createDio(ref));
-final featureDioProvider = Provider<Dio>(
-  (ref) => _createDio(ref, session: ref.watch(featureSessionProvider)),
+final featureDioProvider = Provider<Dio>((ref) {
+  final lifecycle = ref.watch(sessionLifecycleProvider);
+  final contextState = ref.read(requestContextProvider.notifier);
+  final identity = ref.watch(requestContextProvider.select(_requestIdentity));
+  final session = FeatureSession(
+    contextState.state,
+    lifecycle,
+    () => _requestIdentity(contextState.state) == identity,
+  );
+  ref.onDispose(session.dispose);
+  return _createDio(ref, session: session);
+});
+
+({String? userId, String? employeeId, String? companyId}) _requestIdentity(
+  RequestContext? context,
+) => (
+  userId: context?.userId,
+  employeeId: context?.employeeId,
+  companyId: context?.activeCompanyId,
 );
 
 Dio _createDio(Ref ref, {FeatureSession? session}) {
@@ -60,6 +96,7 @@ Dio _createDio(Ref ref, {FeatureSession? session}) {
       cookieStore: ref.watch(sessionCookieStoreProvider),
       onSessionInvalidated: () {
         contextState.state = null;
+        ref.read(refreshedSessionProvider.notifier).state = null;
         invalidationState.state++;
       },
     ),
@@ -129,6 +166,8 @@ class AuthInterceptor extends Interceptor {
       'sessionRevision',
       () => session?.revision ?? _lifecycle.revision,
     );
+    options.headers.putIfAbsent('X-Correlation-Id', () => const Uuid().v4());
+    options.headers['X-Request-Id'] = const Uuid().v4();
     if (options.extra['logoutSnapshot'] == true) {
       handler.next(options);
       return;
@@ -222,7 +261,20 @@ class AuthInterceptor extends Interceptor {
       handler.next(_cancelled(request));
       return;
     }
-    if (err.response?.statusCode != 401) {
+    if (err.response?.statusCode == 403 &&
+        err.response?.data is Map &&
+        (err.response!.data as Map)['code'] == 'PASSWORD_CHANGE_REQUIRED') {
+      try {
+        await _refresh.requirePasswordChange(
+          request.extra['sessionRevision'] as int,
+          () => _current(request),
+        );
+      } finally {
+        handler.next(err);
+      }
+      return;
+    }
+    if (!_refreshableAuthenticationError(err)) {
       handler.next(err);
       return;
     }
@@ -294,7 +346,9 @@ class AuthInterceptor extends Interceptor {
         ..addAll(headers);
       return (response: await _dio.fetch<dynamic>(retry), error: null);
     } on DioException catch (error) {
-      if (error.response?.statusCode == 401) await _invalidate(revision);
+      if (_refreshableAuthenticationError(error)) {
+        await _invalidate(revision);
+      }
       return (response: null, error: error);
     } catch (error, stack) {
       return (
@@ -306,6 +360,16 @@ class AuthInterceptor extends Interceptor {
         ),
       );
     }
+  }
+
+  bool _refreshableAuthenticationError(DioException error) {
+    if (error.response?.statusCode != 401) return false;
+    final data = error.response?.data;
+    if (data is! Map) return false;
+    return const {
+      'TOKEN_EXPIRED',
+      'AUTHENTICATION_FAILED',
+    }.contains(data['code']);
   }
 
   Future<void> _invalidate(int revision) async {

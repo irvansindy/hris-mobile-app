@@ -30,29 +30,24 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
     required int page,
     required int limit,
   }) async {
-    final context = _requireContext();
+    final context = kind == RequestKind.leave
+        ? _requirePermission('leave:read')
+        : _requireContext();
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         kind == RequestKind.leave ? '/leave' : '/permission-requests/my',
-        queryParameters: {'page': page, 'limit': limit},
       );
       final envelope = ApiEnvelope.fromJson(response.data ?? const {});
       if (!envelope.success) throw FormatException(envelope.message);
       final raw = envelope.data;
       final items = _listData(raw, const ['items', 'requests', 'leaves']);
-      final meta =
-          envelope.meta ??
-          (raw is Map<String, dynamic>
-              ? raw['meta'] as Map<String, dynamic>?
-              : null) ??
-          const {};
       return EmployeeRequestPage(
         items: items
             .map((item) => _request(item, kind, context))
             .toList(growable: false),
-        page: _integer(meta['page'], page),
-        totalPages: _integer(meta['totalPages'], page),
-        total: _integer(meta['total'], items.length),
+        page: 1,
+        totalPages: items.isEmpty ? 0 : 1,
+        total: items.length,
       );
     } on DioException catch (error) {
       throw mapDioException(error);
@@ -61,7 +56,7 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
 
   @override
   Future<List<LeaveTypeOption>> getLeaveTypes() async {
-    _requireContext();
+    _requirePermission('leave:read');
     try {
       final response = await _dio.get<Map<String, dynamic>>('/leave/types');
       final envelope = ApiEnvelope.fromJson(response.data ?? const {});
@@ -86,7 +81,7 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
 
   @override
   Future<EmployeeRequest> getLeaveDetail(String id) async {
-    final context = _requireContext();
+    final context = _requirePermission('leave:read');
     _requireSafeId(id);
     try {
       final response = await _dio.get<Map<String, dynamic>>('/leave/$id');
@@ -98,23 +93,32 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
 
   @override
   Future<EmployeeRequest> submit(SubmitRequestCommand command) async {
-    final context = _requireContext();
+    if (command.kind == RequestKind.permission) {
+      _requireContext();
+      throw const ApiException(
+        'Pengajuan izin production belum tersedia karena satuan durasi dan kontrak upload lampiran belum dipastikan backend.',
+      );
+    }
+    final context = _requirePermission('leave:create');
     if (command.startDate == null ||
         command.endDate == null ||
         command.reason?.trim().isEmpty != false) {
       throw const ApiException('Lengkapi tanggal dan alasan pengajuan.');
     }
-    final isLeave = command.kind == RequestKind.leave;
     try {
+      final attachment = command.attachment == null
+          ? null
+          : await _uploadLeaveAttachment(command.attachment!);
       final response = await _dio.post<Map<String, dynamic>>(
-        isLeave ? '/leave' : '/permission-requests',
+        '/leave',
         data: {
-          if (isLeave) 'leaveTypeId': command.type else 'type': command.type,
-          'startDate': _date(command.startDate!),
-          'endDate': _date(command.endDate!),
+          'employeeId': context.employeeId,
+          'companyId': context.activeCompanyId,
+          'leaveTypeId': command.type,
+          'startDate': _isoDate(command.startDate!),
+          'endDate': _isoDate(command.endDate!),
           'reason': command.reason!.trim(),
-          if (isLeave && command.attachment != null)
-            'attachment': command.attachment,
+          'attachment': ?attachment,
         },
         options: command.idempotencyKey == null
             ? null
@@ -124,6 +128,25 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
     } on DioException catch (error) {
       throw mapDioException(error);
     }
+  }
+
+  Future<String> _uploadLeaveAttachment(RequestAttachment attachment) async {
+    if (attachment.bytes.isEmpty || attachment.fileName.trim().isEmpty) {
+      throw const ApiException('Lampiran cuti tidak valid.');
+    }
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/leave/attachments',
+      data: FormData.fromMap({
+        'attachment': MultipartFile.fromBytes(
+          attachment.bytes,
+          filename: attachment.fileName.trim(),
+        ),
+      }),
+    );
+    final data = ApiEnvelope.fromJson(
+      response.data ?? const {},
+    ).requireObjectData();
+    return _requiredText(data, const ['url']);
   }
 
   @override
@@ -147,6 +170,18 @@ class DioRequestRemoteDataSource implements RequestRemoteDataSource {
       throw const ApiException('Session employee/company belum tersedia.');
     }
     return context!;
+  }
+
+  RequestContext _requirePermission(String permission) {
+    final context = _requireContext();
+    if (!context.hasPermission(permission)) {
+      throw ApiException(
+        'Akun tidak memiliki izin $permission.',
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      );
+    }
+    return context;
   }
 
   Map<String, dynamic> _object(Response<Map<String, dynamic>> response) {
@@ -237,6 +272,9 @@ String _range(DateTime? start, DateTime? end) {
 String _date(DateTime value) =>
     '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
 
+String _isoDate(DateTime value) =>
+    DateTime.utc(value.year, value.month, value.day).toIso8601String();
+
 DateTime? _parseDate(Object? value) =>
     value is String ? DateTime.tryParse(value)?.toLocal() : null;
 
@@ -253,10 +291,3 @@ String _requiredText(Map<dynamic, dynamic> json, List<String> keys) {
   if (value == null) throw const FormatException('Request data is incomplete');
   return value;
 }
-
-int _integer(Object? value, int fallback) => switch (value) {
-  int number => number,
-  num number => number.round(),
-  String text => int.tryParse(text) ?? fallback,
-  _ => fallback,
-};

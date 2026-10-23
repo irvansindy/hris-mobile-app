@@ -321,7 +321,7 @@ class _Profile implements ProfileRepository {
   Future<Employee> refresh() => pending.future;
 }
 
-class _Calendar implements CalendarRepository {
+class _Calendar extends CalendarRepository {
   _Calendar(this.name);
   final String name;
   final pending = Completer<CalendarData>();

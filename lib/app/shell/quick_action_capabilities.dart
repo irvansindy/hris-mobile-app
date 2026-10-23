@@ -55,8 +55,8 @@ final quickActionCapabilitiesProvider = Provider<List<QuickActionCapability>>((
     QuickActionCapability(
       label: 'Slip gaji',
       icon: Icons.lock_outline_rounded,
-      endpointAvailable: false,
-      route: null,
+      endpointAvailable: true,
+      route: '/payroll',
       requiredPermission: 'payroll:read',
     ),
   ];
@@ -73,8 +73,7 @@ List<AppQuickActionItem> buildAvailableQuickActions({
         final permission = capability.requiredPermission;
         return capability.endpointAvailable &&
             capability.route != null &&
-            (permission == null ||
-                requestContext.permissions.contains(permission));
+            (permission == null || requestContext.hasPermission(permission));
       })
       .map(
         (capability) => AppQuickActionItem(

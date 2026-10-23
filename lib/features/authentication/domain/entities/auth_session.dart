@@ -33,6 +33,26 @@ class AuthSession {
   final String? userName;
   final String? email;
 
+  AuthSession requiringPasswordChange() => mustChangePassword
+      ? this
+      : AuthSession(
+          accessToken: accessToken,
+          refreshToken: refreshToken,
+          expiresIn: expiresIn,
+          userId: userId,
+          employeeId: employeeId,
+          companyId: companyId,
+          companyScope: companyScope,
+          groupId: groupId,
+          roles: roles,
+          permissions: permissions,
+          hasGlobalRole: hasGlobalRole,
+          maxRolePriority: maxRolePriority,
+          mustChangePassword: true,
+          userName: userName,
+          email: email,
+        );
+
   bool get hasEmployeeAccess =>
       employeeId != null && (companyId != null || companyScope.isNotEmpty);
 }

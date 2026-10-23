@@ -73,6 +73,10 @@ void main() {
 }
 
 class _GoldenApprovals implements ApprovalRepository {
+  @override
+  Future<WorkflowApprovalDetail> getDetail(String instanceId) =>
+      throw UnimplementedError();
+
   const _GoldenApprovals();
 
   @override
@@ -147,6 +151,7 @@ class _GoldenApprovals implements ApprovalRepository {
     required String instanceId,
     required WorkflowApprovalAction action,
     String? comment,
+    String? subjectEmployeeId,
   }) => throw UnimplementedError();
 
   @override

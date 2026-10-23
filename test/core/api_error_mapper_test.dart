@@ -30,6 +30,40 @@ void main() {
     expect(failure, isA<AuthenticationFailure>());
   });
 
+  for (final code in ['PAYROLL_UNLOCK_REQUIRED', 'PAYROLL_REAUTH_FAILED']) {
+    test('keeps payroll 401 $code outside session authentication', () {
+      final failure = mapApiException(
+        ApiException(
+          'Payroll verification required',
+          statusCode: 401,
+          code: code,
+        ),
+      );
+
+      expect(failure, isA<ServerFailure>());
+      expect((failure as ServerFailure).code, code);
+      expect(failure.statusCode, 401);
+    });
+  }
+
+  for (final code in [
+    'PAYSLIP_PIN_REAUTH_FAILED',
+    'PAYSLIP_PIN_INVALID',
+    'PAYSLIP_PIN_NOT_SET',
+    'PAYSLIP_UNLOCK_INVALID',
+    'PAYSLIP_PDF_TOO_LARGE',
+    'PAYSLIP_PIN_LOCKED',
+  ]) {
+    test('preserves employee payslip error $code for feature recovery', () {
+      final failure = mapApiException(
+        ApiException('Payslip failure', statusCode: 403, code: code),
+      );
+
+      expect(failure, isA<ServerFailure>());
+      expect((failure as ServerFailure).code, code);
+    });
+  }
+
   test('preserves rate-limit retry duration for user-facing recovery', () {
     final request = RequestOptions(path: '/attendance/me/check-in');
     final exception = mapDioException(

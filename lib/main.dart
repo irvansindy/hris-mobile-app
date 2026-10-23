@@ -5,11 +5,11 @@ import 'package:hrm_app/core/config/demo_mode.dart';
 import 'package:hrm_app/demo/demo_store.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hrm_app/app/router/app_router.dart';
 import 'package:hrm_app/app/shell/main_shell.dart';
 import 'package:hrm_app/app/providers/theme_controller.dart';
 import 'package:hrm_app/core/config/app_config.dart';
+import 'package:hrm_app/core/localization/app_localizations.dart';
 import 'package:hrm_app/core/network/dio_client.dart';
 import 'package:hrm_app/core/storage/preferences.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
@@ -20,6 +20,7 @@ import 'package:hrm_app/features/authentication/presentation/screens/change_pass
 import 'package:hrm_app/features/authentication/presentation/screens/employee_access_unavailable_screen.dart';
 import 'package:hrm_app/features/authentication/presentation/screens/session_splash_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hrm_app/app/providers/push_lifecycle.dart';
 
 export 'package:hrm_app/app/shell/main_shell.dart' show MainShell;
 
@@ -56,6 +57,7 @@ class HrmsApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(pushLifecycleProvider);
     final themeMode = ref.watch(themeControllerProvider);
     final featureSession = ref.watch(featureSessionProvider);
     final router = ref.watch(appRouterProvider);
@@ -65,7 +67,7 @@ class HrmsApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       locale: const Locale('id', 'ID'),
       supportedLocales: const [Locale('id', 'ID')],
-      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      localizationsDelegates: appLocalizationsDelegates,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeMode,

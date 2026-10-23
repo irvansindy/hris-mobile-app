@@ -12,46 +12,70 @@ class DioNotificationRepository implements NotificationRepository {
   final RequestContext context;
 
   @override
-  Future<List<NotificationItem>> load({required int limit}) async {
+  Future<NotificationPage> load({int page = 1, int limit = 50}) async {
+    if (page < 1 || limit < 1 || limit > 100) {
+      throw ArgumentError('Halaman notifikasi tidak valid.');
+    }
     final response = await _request(
       'GET',
       '/notifications',
-      query: {'limit': limit},
+      query: {'page': page, 'limit': limit},
     );
     final raw = response.requireListData();
+    final meta = response.meta;
+    if (meta == null ||
+        meta['page'] != page ||
+        meta['page'] is! int ||
+        meta['limit'] != limit ||
+        meta['limit'] is! int ||
+        meta['total'] is! int ||
+        (meta['total'] as int) < 0 ||
+        meta['totalPages'] is! int ||
+        meta['totalPages'] != ((meta['total'] as int) / limit).ceil() ||
+        meta['hasNextPage'] != (page < (meta['totalPages'] as int)) ||
+        meta['hasPreviousPage'] != (page > 1) ||
+        raw.length > limit) {
+      throw const FormatException('Metadata notifikasi tidak valid.');
+    }
     final ids = <String>{};
-    return List.unmodifiable(
-      raw.map((item) {
-        if (item is! Map<String, dynamic> ||
-            item['id'] is! String ||
-            (item['id'] as String).isEmpty ||
-            item['title'] is! String ||
-            (item['title'] as String).trim().isEmpty ||
-            item['isRead'] is! bool ||
-            !ids.add(item['id'] as String)) {
-          throw const FormatException('Notifikasi tidak valid.');
-        }
-        if ((item['userId'] != null && item['userId'] != context.userId) ||
-            (item['companyId'] != null &&
-                item['companyId'] != context.activeCompanyId)) {
-          throw const FormatException(
-            'Notifikasi tidak sesuai akun/perusahaan aktif.',
+    final items = raw
+        .map((item) {
+          if (item is! Map<String, dynamic> ||
+              item['id'] is! String ||
+              (item['id'] as String).isEmpty ||
+              item['title'] is! String ||
+              (item['title'] as String).trim().isEmpty ||
+              item['isRead'] is! bool ||
+              !ids.add(item['id'] as String)) {
+            throw const FormatException('Notifikasi tidak valid.');
+          }
+          if ((item['userId'] != null && item['userId'] != context.userId) ||
+              (item['companyId'] != null &&
+                  item['companyId'] != context.activeCompanyId)) {
+            throw const FormatException(
+              'Notifikasi tidak sesuai akun/perusahaan aktif.',
+            );
+          }
+          return NotificationItem(
+            id: item['id'] as String,
+            title: item['title'] as String,
+            isRead: item['isRead'] as bool,
+            message: _text(item['message']),
+            type: _text(item['type']) ?? 'INFO',
+            resource: _text(item['resource']),
+            action: _text(item['action']),
+            referenceId: _text(item['referenceId']),
+            createdAt: DateTime.tryParse(
+              _text(item['createdAt']) ?? '',
+            )?.toLocal(),
           );
-        }
-        return NotificationItem(
-          id: item['id'] as String,
-          title: item['title'] as String,
-          isRead: item['isRead'] as bool,
-          message: _text(item['message']),
-          type: _text(item['type']) ?? 'INFO',
-          resource: _text(item['resource']),
-          action: _text(item['action']),
-          referenceId: _text(item['referenceId']),
-          createdAt: DateTime.tryParse(
-            _text(item['createdAt']) ?? '',
-          )?.toLocal(),
-        );
-      }),
+        })
+        .toList(growable: false);
+    return NotificationPage(
+      items: items,
+      page: page,
+      totalPages: meta['totalPages'] as int,
+      total: meta['total'] as int,
     );
   }
 

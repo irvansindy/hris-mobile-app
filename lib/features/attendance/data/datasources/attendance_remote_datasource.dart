@@ -15,7 +15,7 @@ import 'package:hrm_app/features/attendance/domain/entities/attendance_today.dar
 abstract class AttendanceRemoteDataSource {
   Future<AttendanceDto> getToday();
   Future<AttendanceContext> getContext();
-  Future<AttendanceToday> getTodayState() async => AttendanceToday(
+  Future<AttendanceToday> getTodayState() async => AttendanceToday.derived(
     record: (await getToday()).toEntity(),
     context: await getContext(),
   );
@@ -50,7 +50,35 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
         employeeId: context.employeeId!,
         companyId: context.activeCompanyId!,
       ).value;
-      final today = _todayAttendance(data);
+      final serverTimeText = data['serverTime'];
+      final serverDate = data['serverDate'];
+      final timezone = data['timezone'];
+      final canCheckIn = data['canCheckIn'];
+      final canCheckOut = data['canCheckOut'];
+      final serverTime = serverTimeText is String
+          ? DateTime.tryParse(serverTimeText)
+          : null;
+      if (serverTime == null ||
+          !_serverTimeZonePattern.hasMatch(serverTimeText as String? ?? '') ||
+          serverDate is! String ||
+          !_isServerDate(serverDate) ||
+          timezone is! String ||
+          timezone.trim().isEmpty ||
+          canCheckIn is! bool ||
+          canCheckOut is! bool ||
+          (canCheckIn && canCheckOut)) {
+        throw const FormatException(
+          'Attendance today eligibility is incomplete',
+        );
+      }
+      if (!data.containsKey('record')) {
+        throw const FormatException('Attendance today record is missing');
+      }
+      final rawRecord = data['record'];
+      if (rawRecord != null && rawRecord is! Map<String, dynamic>) {
+        throw const FormatException('Attendance today record is invalid');
+      }
+      final today = rawRecord as Map<String, dynamic>?;
       final record = today == null
           ? AttendanceDto(
               id: '',
@@ -64,7 +92,15 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
               today,
               expectedEmployeeId: context.employeeId!,
             ).toEntity();
-      return AttendanceToday(record: record, context: policy);
+      return AttendanceToday(
+        record: record,
+        context: policy,
+        serverTime: serverTime.toUtc(),
+        serverDate: serverDate,
+        timezone: timezone,
+        canCheckIn: canCheckIn,
+        canCheckOut: canCheckOut,
+      );
     } on DioException catch (error) {
       throw mapDioException(error);
     }
@@ -92,6 +128,12 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
               ? raw['meta'] as Map<String, dynamic>?
               : null) ??
           const {};
+      final hasNextPage = meta['hasNextPage'];
+      if (hasNextPage is! bool) {
+        throw const FormatException(
+          'Attendance history pagination metadata is incomplete',
+        );
+      }
       return AttendanceHistoryPage(
         items: items
             .map(
@@ -103,6 +145,7 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
         page: _integer(meta['page'], page),
         totalPages: _integer(meta['totalPages'], page),
         total: _integer(meta['total'], items.length),
+        hasNextPage: hasNextPage,
       );
     } on DioException catch (error) {
       throw mapDioException(error);
@@ -288,4 +331,17 @@ class DioAttendanceRemoteDataSource implements AttendanceRemoteDataSource {
     String text => int.tryParse(text) ?? fallback,
     _ => fallback,
   };
+}
+
+final RegExp _serverDatePattern = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
+final RegExp _serverTimeZonePattern = RegExp(r'T.+(?:Z|[+-]\d{2}:\d{2})$');
+
+bool _isServerDate(String value) {
+  final match = _serverDatePattern.firstMatch(value);
+  if (match == null) return false;
+  final parsed = DateTime.tryParse('${value}T00:00:00Z');
+  return parsed != null &&
+      parsed.year == int.parse(match.group(1)!) &&
+      parsed.month == int.parse(match.group(2)!) &&
+      parsed.day == int.parse(match.group(3)!);
 }

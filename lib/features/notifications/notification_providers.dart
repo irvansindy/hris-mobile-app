@@ -26,44 +26,59 @@ final notificationInboxProvider =
 class NotificationInboxController
     extends AutoDisposeAsyncNotifier<NotificationInbox> {
   int _generation = 0;
+  bool _reloadBeforeMore = false;
   late FeatureSession _session;
 
   @override
   Future<NotificationInbox> build() async {
     _session = ref.watch(featureSessionProvider);
+    _reloadBeforeMore = false;
     _generation++;
     ref.onDispose(() => _generation++);
     final repo = ref.watch(notificationRepositoryProvider);
-    return NotificationInbox(items: await repo.load(limit: 50), limit: 50);
+    return _inbox(await repo.load());
   }
 
   Future<void> refresh({bool loadMore = false}) async {
     final session = _session;
     final previous = state.asData?.value;
-    if (previous?.busy == true || !session.isCurrent) return;
+    if (previous?.busy == true ||
+        !session.isCurrent ||
+        (loadMore && previous?.canLoadMore != true)) {
+      return;
+    }
     final generation = ++_generation;
-    final limit = (previous?.limit ?? 50) + (loadMore ? 50 : 0);
+    final append = loadMore && !_reloadBeforeMore;
+    final page = append ? previous!.page + 1 : 1;
     final repo = ref.read(notificationRepositoryProvider);
     if (previous == null) {
       state = const AsyncLoading();
     } else {
-      state = AsyncData(
-        NotificationInbox(
-          items: previous.items,
-          limit: previous.limit,
-          busy: true,
-        ),
-      );
+      state = AsyncData(previous.copyWith(busy: true));
     }
-    final result = await AsyncValue.guard(
-      () async => NotificationInbox(
-        items: await repo.load(limit: limit),
-        limit: limit,
-      ),
-    );
-    if (!session.isCurrent || generation != _generation) return;
-    state = result;
-    ref.invalidate(notificationUnreadCountProvider);
+    try {
+      final result = await repo.load(page: page);
+      if (!session.isCurrent || generation != _generation) return;
+      final byId = <String, NotificationItem>{
+        if (append)
+          for (final item in previous!.items) item.id: item,
+        for (final item in result.items) item.id: item,
+      };
+      state = AsyncData(
+        _inbox(result, items: byId.values.toList(growable: false)),
+      );
+      _reloadBeforeMore = false;
+      ref.invalidate(notificationUnreadCountProvider);
+    } catch (error, stack) {
+      if (!session.isCurrent || generation != _generation) return;
+      state = previous == null
+          ? AsyncError(error, stack)
+          : AsyncData(
+              previous.copyWith(
+                actionError: 'Notifikasi gagal dimuat. Silakan coba lagi.',
+              ),
+            );
+    }
   }
 
   Future<bool> markRead({String? id}) async {
@@ -75,13 +90,7 @@ class NotificationInboxController
     }
     final repo = ref.read(notificationRepositoryProvider);
     final generation = ++_generation;
-    state = AsyncData(
-      NotificationInbox(
-        items: previous.items,
-        limit: previous.limit,
-        busy: true,
-      ),
-    );
+    state = AsyncData(previous.copyWith(busy: true));
     try {
       if (id == null) {
         await repo.readAll();
@@ -107,14 +116,12 @@ class NotificationInboxController
                 : item,
           )
           .toList(growable: false);
-      state = AsyncData(NotificationInbox(items: items, limit: previous.limit));
+      state = AsyncData(previous.copyWith(items: items));
       return true;
     } catch (error) {
       if (session.isCurrent && generation == _generation) {
         state = AsyncData(
-          NotificationInbox(
-            items: previous.items,
-            limit: previous.limit,
+          previous.copyWith(
             actionError: error is ApiException
                 ? error.message
                 : 'Status baca gagal disimpan. Silakan coba lagi.',
@@ -135,27 +142,19 @@ class NotificationInboxController
     final optimisticItems = previous.items
         .where((item) => item.id != id)
         .toList(growable: false);
-    state = AsyncData(
-      NotificationInbox(
-        items: optimisticItems,
-        limit: previous.limit,
-        busy: true,
-      ),
-    );
+    state = AsyncData(previous.copyWith(items: optimisticItems, busy: true));
     try {
       await repo.delete(id);
       if (!session.isCurrent || generation != _generation) return false;
-      state = AsyncData(
-        NotificationInbox(items: optimisticItems, limit: previous.limit),
-      );
+      // Deletion shifts server page offsets; next load must restart at page 1.
+      _reloadBeforeMore = true;
+      state = AsyncData(previous.copyWith(items: optimisticItems));
       ref.invalidate(notificationUnreadCountProvider);
       return true;
     } catch (error) {
       if (session.isCurrent && generation == _generation) {
         state = AsyncData(
-          NotificationInbox(
-            items: previous.items,
-            limit: previous.limit,
+          previous.copyWith(
             actionError: error is ApiException
                 ? error.message
                 : 'Notifikasi gagal dihapus. Daftar telah dipulihkan.',
@@ -167,3 +166,14 @@ class NotificationInboxController
     }
   }
 }
+
+NotificationInbox _inbox(
+  NotificationPage result, {
+  List<NotificationItem>? items,
+}) => NotificationInbox(
+  items: items ?? result.items,
+  limit: 50,
+  page: result.page,
+  totalPages: result.totalPages,
+  total: result.total,
+);

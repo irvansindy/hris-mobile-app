@@ -3,10 +3,13 @@ import 'package:hrm_app/features/approvals/domain/entities/workflow_approval.dar
 abstract interface class ApprovalRepository {
   Future<WorkflowApprovalPage> getQueue({required int page, int limit = 20});
 
+  Future<WorkflowApprovalDetail> getDetail(String instanceId);
+
   Future<void> applyAction({
     required String instanceId,
     required WorkflowApprovalAction action,
     String? comment,
+    String? subjectEmployeeId,
   });
 
   Future<WorkflowBulkResult> applyBulkAction({

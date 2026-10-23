@@ -17,10 +17,12 @@ void main() {
   const storage = SecureTokenStorage(FlutterSecureStorage());
   late _Remote remote;
   late ProviderContainer container;
+  final cleanedUsers = <String?>[];
 
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
     remote = _Remote();
+    cleanedUsers.clear();
     container = ProviderContainer(
       overrides: [
         appConfigProvider.overrideWithValue(
@@ -33,6 +35,9 @@ void main() {
         ),
         authRemoteDataSourceProvider.overrideWithValue(remote),
         tokenStorageProvider.overrideWithValue(storage),
+        sessionArtifactCleanerProvider.overrideWithValue((session) async {
+          cleanedUsers.add(session.userId);
+        }),
       ],
     );
   });
@@ -53,6 +58,7 @@ void main() {
       expect(await storage.readAccessToken(), isNull);
       expect(remote.logoutHeaders, isEmpty);
       expect(remote.logoutRefreshToken, 'refresh-A');
+      expect(cleanedUsers, ['A']);
       await controller.login(email: 'B', password: 'fixture');
       remote.logoutGate!.completeError(StateError('offline'));
       await logout;

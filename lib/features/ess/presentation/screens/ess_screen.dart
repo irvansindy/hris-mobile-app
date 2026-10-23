@@ -10,7 +10,7 @@ import 'package:hrm_app/features/ess/domain/ess_models.dart';
 import 'package:hrm_app/features/ess/ess_providers.dart';
 import 'package:hrm_app/features/ess/presentation/screens/ess_forms.dart';
 
-enum EssArea { loan, ewa, activity, travel }
+enum EssArea { loan, ewa, activity, travel, asset }
 
 class EssScreen extends ConsumerStatefulWidget {
   const EssScreen({super.key, this.initialArea = EssArea.loan});
@@ -23,12 +23,12 @@ class EssScreen extends ConsumerStatefulWidget {
 
 class _EssScreenState extends ConsumerState<EssScreen> {
   late EssArea _area = widget.initialArea;
+  int _assetPage = 1;
 
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(featureSessionProvider);
-    final permissions =
-        ref.watch(requestContextProvider)?.permissions ?? const [];
+    final requestContext = ref.watch(requestContextProvider);
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator(
@@ -43,6 +43,7 @@ class _EssScreenState extends ConsumerState<EssScreen> {
             ),
             children: [
               const AppDetailHeader(
+                key: ValueKey('ess-header'),
                 title: 'Layanan Employee',
                 subtitle: 'Status dan nominal langsung dari server',
               ),
@@ -68,25 +69,44 @@ class _EssScreenState extends ConsumerState<EssScreen> {
                 },
               ),
               const SizedBox(height: AppSpacing.lg),
+              const SizedBox(key: ValueKey('ess-content'), height: 0),
               switch (_area) {
                 EssArea.loan => _LoanPanel(
                   session: session,
-                  canReadDetail: permissions.contains('employee-loan:read'),
+                  canReadDetail:
+                      requestContext?.hasPermission('employee-loan:read') ==
+                      true,
                 ),
                 EssArea.ewa => _EwaPanel(
                   session: session,
-                  canCreate: permissions.contains('ewa:create'),
-                  canCancel: permissions.contains('ewa:update'),
-                  canReadDetail: permissions.contains('ewa:read'),
+                  canCreate:
+                      requestContext?.hasPermission('ewa:create') == true,
+                  canCancel:
+                      requestContext?.hasPermission('ewa:update') == true,
+                  canReadDetail:
+                      requestContext?.hasPermission('ewa:read') == true,
                 ),
                 EssArea.activity => _ActivityPanel(
                   session: session,
-                  canCreate: permissions.contains('daily-activity:create'),
-                  canReadDetail: permissions.contains('daily-activity:read'),
-                  canUpdate: permissions.contains('daily-activity:update'),
-                  canDelete: permissions.contains('daily-activity:delete'),
+                  canCreate:
+                      requestContext?.hasPermission('daily-activity:create') ==
+                      true,
+                  canReadDetail:
+                      requestContext?.hasPermission('daily-activity:read') ==
+                      true,
+                  canUpdate:
+                      requestContext?.hasPermission('daily-activity:update') ==
+                      true,
+                  canDelete:
+                      requestContext?.hasPermission('daily-activity:delete') ==
+                      true,
                 ),
                 EssArea.travel => _TravelPanel(session: session),
+                EssArea.asset => _AssetPanel(
+                  session: session,
+                  page: _assetPage,
+                  onPageChanged: (value) => setState(() => _assetPage = value),
+                ),
               },
             ],
           ),
@@ -100,7 +120,94 @@ class _EssScreenState extends ConsumerState<EssScreen> {
     EssArea.ewa => ref.refresh(ewaSnapshotProvider(session).future),
     EssArea.activity => ref.refresh(activitySnapshotProvider(session).future),
     EssArea.travel => ref.refresh(travelSnapshotProvider(session).future),
+    EssArea.asset => ref.refresh(
+      assetPageProvider((session: session, page: _assetPage)).future,
+    ),
   };
+}
+
+class _AssetPanel extends ConsumerWidget {
+  const _AssetPanel({
+    required this.session,
+    required this.page,
+    required this.onPageChanged,
+  });
+
+  final FeatureSession session;
+  final int page;
+  final ValueChanged<int> onPageChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final query = (session: session, page: page);
+    final state = ref.watch(assetPageProvider(query));
+    return state.when(
+      loading: () => const AppStateView.loading(
+        title: 'Memuat aset',
+        message: 'Mengambil aset yang tercatat atas nama Anda.',
+      ),
+      error: (_, _) => _ErrorState(
+        title: 'Aset gagal dimuat',
+        onRetry: () => ref.invalidate(assetPageProvider(query)),
+      ),
+      data: (result) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppSectionHeader(
+            title: 'Aset saya',
+            description: '${result.total} aset tercatat oleh server.',
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (result.items.isEmpty)
+            const AppStateView(
+              kind: AppViewStateKind.empty,
+              title: 'Belum ada aset aktif',
+              message: 'Aset yang ditugaskan kepada Anda akan muncul di sini.',
+            )
+          else
+            ...result.items.map(
+              (asset) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: _RecordCard(
+                  title: asset.name,
+                  amount: asset.code,
+                  subtitle: [
+                    if (asset.serialNumber != null)
+                      'Serial ${asset.serialNumber}',
+                    if (asset.assignedAt != null)
+                      'Sejak ${_date(asset.assignedAt)}',
+                  ].join(' · '),
+                  status: asset.status,
+                  actions: const [],
+                ),
+              ),
+            ),
+          if (page > 1 || result.hasNextPage) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: page > 1 ? () => onPageChanged(page - 1) : null,
+                    child: const Text('Sebelumnya'),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: result.hasNextPage
+                        ? () => onPageChanged(page + 1)
+                        : null,
+                    child: const Text('Berikutnya'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _LoanPanel extends ConsumerWidget {
@@ -816,6 +923,7 @@ String _areaLabel(EssArea area) => switch (area) {
   EssArea.ewa => 'Earned Wage Access',
   EssArea.activity => 'Aktivitas harian',
   EssArea.travel => 'Perjalanan dan klaim',
+  EssArea.asset => 'Aset saya',
 };
 
 String _money(double value) => NumberFormat.currency(

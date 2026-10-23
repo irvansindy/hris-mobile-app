@@ -85,75 +85,122 @@ void main() {
     expect(find.text('Memulihkan sesi...'), findsNothing);
   });
 
-  testWidgets('shell keeps four branches and hides navigation on requests', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(320, 568);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
-    final container = await containerFor(
-      _AuthRepository(restoredSession: _employeeSession('employee-a')),
-    );
-    addTearDown(container.dispose);
-    await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const HrmsApp()),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'shell keeps navigation on requests and restores origin on Back',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 568);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final container = await containerFor(
+        _AuthRepository(restoredSession: _employeeSession('employee-a')),
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(container: container, child: const HrmsApp()),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byType(AppFloatingNavigation), findsOneWidget);
-    expect(find.text('Beranda'), findsOneWidget);
-    final homeContext = tester.element(find.byType(HomeScreen));
-    expect(Localizations.localeOf(homeContext), const Locale('id', 'ID'));
-    expect(MaterialLocalizations.of(homeContext).cancelButtonLabel, 'Batal');
-    expect(find.text('Profil'), findsOneWidget);
-    expect(find.text('Ajukan cuti'), findsNothing);
-    expect(find.text('Klaim lembur'), findsNothing);
-    expect(find.text('Reimbursement'), findsNothing);
-    expect(find.text('Slip gaji'), findsNothing);
+      expect(find.byType(AppFloatingNavigation), findsOneWidget);
+      expect(find.text('Beranda'), findsOneWidget);
+      final homeContext = tester.element(find.byType(HomeScreen));
+      expect(Localizations.localeOf(homeContext), const Locale('id', 'ID'));
+      expect(MaterialLocalizations.of(homeContext).cancelButtonLabel, 'Batal');
+      expect(find.text('Profil'), findsOneWidget);
+      expect(find.text('Ajukan cuti'), findsNothing);
+      expect(find.text('Klaim lembur'), findsNothing);
+      expect(find.text('Reimbursement'), findsNothing);
+      expect(find.text('Slip gaji'), findsNothing);
 
-    final homeScroll = PrimaryScrollController.of(
-      tester.element(find.byType(HomeScreen)),
-    );
-    homeScroll.jumpTo(homeScroll.position.maxScrollExtent);
-    expect(homeScroll.offset, greaterThan(0));
-    tester
-        .widget<AppFloatingNavigation>(find.byType(AppFloatingNavigation))
-        .onDestinationSelected(0);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(homeScroll.offset, 0);
-
-    await tester.tap(find.byTooltip('Buka absensi'));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(
+      final homeScroll = PrimaryScrollController.of(
+        tester.element(find.byType(HomeScreen)),
+      );
+      homeScroll.jumpTo(homeScroll.position.maxScrollExtent);
+      expect(homeScroll.offset, greaterThan(0));
       tester
           .widget<AppFloatingNavigation>(find.byType(AppFloatingNavigation))
-          .selectedIndex,
-      1,
-    );
+          .onDestinationSelected(0);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(homeScroll.offset, 0);
 
-    container.read(appRouterProvider).push('/requests');
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Pengajuan'), findsOneWidget);
-    expect(find.byType(AppFloatingNavigation), findsNothing);
+      await tester.tap(find.byTooltip('Buka absensi'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        tester
+            .widget<AppFloatingNavigation>(find.byType(AppFloatingNavigation))
+            .selectedIndex,
+        1,
+      );
 
-    container.read(appRouterProvider).pop();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.byType(AppFloatingNavigation), findsOneWidget);
+      container.read(appRouterProvider).push('/requests');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Pengajuan'), findsOneWidget);
+      expect(find.byType(AppFloatingNavigation), findsOneWidget);
+      expect(find.byType(AppQuickActionFab), findsNothing);
 
-    container.read(appRouterProvider).go('/profile');
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(
+      container.read(appRouterProvider).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(AppFloatingNavigation), findsOneWidget);
+      expect(
+        tester
+            .widget<AppFloatingNavigation>(find.byType(AppFloatingNavigation))
+            .selectedIndex,
+        1,
+      );
+
+      final router = container.read(appRouterProvider);
+      Future<void> finishTransition() async {
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      router.go('/requests');
+      await finishTransition();
+      expect(find.text('Pengajuan'), findsOneWidget);
       tester
           .widget<AppFloatingNavigation>(find.byType(AppFloatingNavigation))
-          .selectedIndex,
-      3,
-    );
-  });
+          .onDestinationSelected(0);
+      await finishTransition();
+      expect(find.byType(HomeScreen), findsOneWidget);
+      router.push('/requests');
+      await finishTransition();
+      await tester.tap(find.byTooltip('Buka absensi'));
+      await finishTransition();
+      expect(
+        tester
+            .widget<AppFloatingNavigation>(find.byType(AppFloatingNavigation))
+            .selectedIndex,
+        1,
+      );
+      tester
+          .widget<AppFloatingNavigation>(find.byType(AppFloatingNavigation))
+          .onDestinationSelected(0);
+      await finishTransition();
+      expect(find.byType(HomeScreen), findsOneWidget);
+
+      router.go('/requests');
+      await finishTransition();
+      router.push('/requests/leave/new');
+      await finishTransition();
+      expect(find.byType(AppFloatingNavigation), findsNothing);
+      router.pop();
+      await finishTransition();
+      expect(find.byType(AppFloatingNavigation), findsOneWidget);
+
+      container.read(appRouterProvider).go('/profile');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        tester
+            .widget<AppFloatingNavigation>(find.byType(AppFloatingNavigation))
+            .selectedIndex,
+        3,
+      );
+    },
+  );
 
   testWidgets('login success is shown only with bootstrapped employee name', (
     tester,
@@ -315,13 +362,19 @@ class _Notifications implements NotificationRepository {
 
   int count = 1;
   @override
-  Future<List<NotificationItem>> load({required int limit}) async => [
-    const NotificationItem(
-      id: 'n1',
-      title: 'Fixture pengumuman',
-      isRead: false,
-    ),
-  ];
+  Future<NotificationPage> load({int page = 1, int limit = 50}) async =>
+      NotificationPage(
+        page: page,
+        totalPages: 1,
+        total: 1,
+        items: [
+          const NotificationItem(
+            id: 'n1',
+            title: 'Fixture pengumuman',
+            isRead: false,
+          ),
+        ],
+      );
   @override
   Future<int> unreadCount() async => count;
   @override
@@ -354,6 +407,10 @@ AuthSession _managerSession() => const AuthSession(
 
 class _Approvals implements ApprovalRepository {
   @override
+  Future<WorkflowApprovalDetail> getDetail(String instanceId) =>
+      throw UnimplementedError();
+
+  @override
   Future<WorkflowApprovalPage> getQueue({required int page, int limit = 20}) =>
       Future.value(
         WorkflowApprovalPage(
@@ -369,6 +426,7 @@ class _Approvals implements ApprovalRepository {
     required String instanceId,
     required WorkflowApprovalAction action,
     String? comment,
+    String? subjectEmployeeId,
   }) => throw UnimplementedError();
 
   @override

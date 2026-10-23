@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hrm_app/core/config/demo_mode.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hrm_app/core/errors/failure.dart';
 import 'package:hrm_app/core/face_id/face_id_providers.dart';
@@ -13,9 +12,10 @@ import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
 import 'package:hrm_app/core/widgets/app_state_view.dart';
 import 'package:hrm_app/features/attendance/attendance_providers.dart';
-import 'package:hrm_app/features/attendance/domain/entities/attendance_context.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:hrm_app/features/attendance/domain/entities/attendance_history.dart';
+import 'package:hrm_app/features/attendance/domain/failures/attendance_failure.dart';
+import 'package:hrm_app/features/attendance/presentation/widgets/attendance_overview.dart';
 
 class AttendanceScreen extends ConsumerStatefulWidget {
   const AttendanceScreen({super.key});
@@ -39,24 +39,33 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(featureSessionProvider);
-    final demo = ref.watch(demoModeProvider);
-    final demoSummary = ref.watch(demoAttendanceSummaryBuilderProvider);
+    final faceVerificationLauncher = ref.watch(
+      attendanceFaceVerificationLauncherProvider,
+    );
     final today = ref.watch(attendanceControllerProvider(session));
     final value = today.valueOrNull;
     final record = value?.record;
     final policy = value?.context;
+    final isCheckOut = value?.canCheckOut == true;
+    final hasEligibleAction =
+        value?.canCheckIn == true || value?.canCheckOut == true;
     final needsSelfie =
-        record?.isActive == false && policy?.requiresSelfie == true;
+        value?.canCheckIn == true && policy?.requiresSelfie == true;
+    final requiresCorrection =
+        today.hasError && _requiresCorrection(today.error!);
     final supported =
-        record != null &&
+        hasEligibleAction &&
         policy != null &&
-        (record.isActive
+        (faceVerificationLauncher != null
+            ? true
+            : isCheckOut
             ? policy.supportsMobileGps
             : needsSelfie
             ? policy.supportsFaceRecognition
             : policy.supportsMobileGps);
     final canSubmit =
-        !(demo && record?.checkedOutAt != null) &&
+        hasEligibleAction &&
+        !requiresCorrection &&
         !today.isLoading &&
         !_verifyingFace &&
         record != null &&
@@ -89,6 +98,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
             ),
             children: [
               AppPageHeader(
+                key: const ValueKey('attendance-header'),
                 title: 'Absensi',
                 subtitle: 'Log kehadiran Anda',
                 trailing: FilledButton(
@@ -104,22 +114,13 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                 ),
               ),
               const SizedBox(height: 18),
-              if (demoSummary != null) ...[
-                demoSummary(context),
-                const SizedBox(height: 12),
-              ] else ...[
-                Text(
-                  'Ringkasan',
-                  style: Theme.of(context).textTheme.titleMedium,
+              if (value != null) ...[
+                AttendanceOverview(
+                  contextValue: value.context,
+                  record: value.record,
+                  history: history,
                 ),
                 const SizedBox(height: 12),
-              ],
-              if (value != null) ...[
-                if (!demo) ...[
-                  _AttendanceRecordCard(record: value.record),
-                  const SizedBox(height: 12),
-                  _PolicyCard(value: value.context, record: value.record),
-                ],
               ] else if (today.isLoading)
                 const AppStateView.loading(
                   title: 'Memuat absensi',
@@ -142,20 +143,32 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                   onRetry: () =>
                       ref.invalidate(attendanceControllerProvider(session)),
                   onOpenSettings: _settingsAction(today.error!),
+                  onCorrection: _requiresCorrection(today.error!)
+                      ? () => context.push(
+                          '/attendance/requests?compose=true',
+                          extra: record?.id.isNotEmpty == true ? record : null,
+                        )
+                      : null,
                 ),
               ],
               const SizedBox(height: 14),
               SizedBox(
                 height: 52,
                 child: FilledButton.icon(
+                  key: const ValueKey('attendance-submit-action'),
                   onPressed: canSubmit
-                      ? () => demo
-                            ? _verifyDemoFaceAndSubmit(
+                      ? () => faceVerificationLauncher != null
+                            ? _verifyFaceAndSubmit(
                                 session,
-                                record,
+                                isCheckOut,
+                                needsSelfie,
+                                faceVerificationLauncher,
+                              )
+                            : _confirmAndSubmit(
+                                session,
+                                isCheckOut,
                                 needsSelfie,
                               )
-                            : _confirmAndSubmit(session, record, needsSelfie)
                       : null,
                   icon: today.isLoading || _verifyingFace
                       ? const SizedBox.square(
@@ -166,7 +179,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                           ),
                         )
                       : Icon(
-                          record?.isActive == true
+                          isCheckOut
                               ? Icons.logout_rounded
                               : Icons.login_rounded,
                         ),
@@ -175,13 +188,13 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                         ? _verifyingFace
                               ? 'Memvalidasi wajah...'
                               : 'Memproses...'
-                        : record?.isActive == true
+                        : isCheckOut
                         ? 'Catat pulang'
                         : 'Catat masuk',
                   ),
                 ),
               ),
-              if (policy != null && !supported) ...[
+              if (hasEligibleAction && policy != null && !supported) ...[
                 const SizedBox(height: 10),
                 Text(
                   'Kebijakan perusahaan tidak menyediakan metode absensi yang didukung aplikasi.',
@@ -197,6 +210,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
               ),
               const SizedBox(height: 12),
               _MonthPicker(
+                key: const ValueKey('attendance-history-picker'),
                 month: _historyMonth,
                 onPrevious: () => _changeMonth(-1),
                 onNext:
@@ -208,36 +222,40 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
               ),
               const SizedBox(height: 12),
               _HistoryStatusFilter(
+                key: const ValueKey('attendance-history-filters'),
                 value: _filter,
                 onChanged: (value) => setState(() => _filter = value),
               ),
               const SizedBox(height: 12),
-              history.when(
-                loading: () => const AppStateView.loading(
-                  title: 'Memuat riwayat',
-                  message: 'Mengambil catatan absensi dari server.',
-                ),
-                error: (error, _) => AppStateView(
-                  kind: AppViewStateKind.error,
-                  title: 'Riwayat gagal dimuat',
-                  message: _message(error),
-                  actionLabel: 'Coba lagi',
-                  onAction: () =>
-                      ref.invalidate(attendanceHistoryProvider(query)),
-                ),
-                data: (page) => _HistoryContent(
-                  page: page,
-                  filter: _filter,
-                  onCorrection: (record) => context.push(
-                    '/attendance/requests?compose=true',
-                    extra: record,
+              KeyedSubtree(
+                key: const ValueKey('attendance-history-content'),
+                child: history.when(
+                  loading: () => const AppStateView.loading(
+                    title: 'Memuat riwayat',
+                    message: 'Mengambil catatan absensi dari server.',
                   ),
-                  onPrevious: page.page > 1
-                      ? () => setState(() => _historyPage--)
-                      : null,
-                  onNext: page.hasNextPage
-                      ? () => setState(() => _historyPage++)
-                      : null,
+                  error: (error, _) => AppStateView(
+                    kind: AppViewStateKind.error,
+                    title: 'Riwayat gagal dimuat',
+                    message: _message(error),
+                    actionLabel: 'Coba lagi',
+                    onAction: () =>
+                        ref.invalidate(attendanceHistoryProvider(query)),
+                  ),
+                  data: (page) => _HistoryContent(
+                    page: page,
+                    filter: _filter,
+                    onCorrection: (record) => context.push(
+                      '/attendance/requests?compose=true',
+                      extra: record,
+                    ),
+                    onPrevious: page.page > 1
+                        ? () => setState(() => _historyPage--)
+                        : null,
+                    onNext: page.hasNextPage
+                        ? () => setState(() => _historyPage++)
+                        : null,
+                  ),
                 ),
               ),
             ],
@@ -285,7 +303,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
 
   Future<void> _confirmAndSubmit(
     FeatureSession session,
-    AttendanceEntity record,
+    bool isCheckOut,
     bool needsSelfie,
   ) async {
     final confirmed = await showModalBottomSheet<bool>(
@@ -301,16 +319,12 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              record.isActive
-                  ? 'Konfirmasi catat pulang'
-                  : 'Konfirmasi catat masuk',
+              isCheckOut ? 'Konfirmasi catat pulang' : 'Konfirmasi catat masuk',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              ref.read(demoModeProvider)
-                  ? 'Catatan demo disimpan di perangkat; GPS dan wajah tidak diverifikasi.'
-                  : needsSelfie
+              needsSelfie
                   ? 'Lokasi perangkat dan selfie akan dikirim untuk diverifikasi server.'
                   : 'Lokasi perangkat akan dikirim untuk diverifikasi server.',
             ),
@@ -337,13 +351,14 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await _submitAttendance(session, record, needsSelfie);
+    await _submitAttendance(session, isCheckOut, needsSelfie);
   }
 
-  Future<void> _verifyDemoFaceAndSubmit(
+  Future<void> _verifyFaceAndSubmit(
     FeatureSession session,
-    AttendanceEntity record,
+    bool isCheckOut,
     bool needsSelfie,
+    AttendanceFaceVerificationLauncher launcher,
   ) async {
     final employeeId = session.context?.employeeId;
     final companyId = session.context?.activeCompanyId;
@@ -355,13 +370,18 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
     }
     setState(() => _verifyingFace = true);
     try {
-      final verified = await ref.read(demoFaceVerificationLauncherProvider)(
+      final verified = await launcher(
         context: context,
         employeeId: employeeId,
         companyId: companyId,
       );
       if (!mounted || !verified) return;
-      await _submitAttendance(session, record, needsSelfie);
+      await _submitAttendance(
+        session,
+        isCheckOut,
+        needsSelfie,
+        localFaceVerified: true,
+      );
     } on FaceEnrollmentRequiredException {
       if (mounted) {
         _showFaceMessage(
@@ -391,9 +411,10 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
 
   Future<void> _submitAttendance(
     FeatureSession session,
-    AttendanceEntity record,
-    bool needsSelfie,
-  ) async {
+    bool isCheckOut,
+    bool needsSelfie, {
+    bool localFaceVerified = false,
+  }) async {
     final success = await ref
         .read(attendanceControllerProvider(session).notifier)
         .toggleAttendance(selfie: needsSelfie ? _selfie : null);
@@ -410,209 +431,15 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          ref.read(demoModeProvider)
+          localFaceVerified
               ? 'Absensi demo tersimpan setelah validasi kamera.'
-              : record.isActive
+              : isCheckOut
               ? 'Waktu pulang tercatat di server.'
               : 'Waktu masuk tercatat di server.',
         ),
       ),
     );
   }
-}
-
-class _PolicyCard extends StatelessWidget {
-  const _PolicyCard({required this.value, required this.record});
-
-  final AttendanceContext value;
-  final AttendanceEntity record;
-
-  @override
-  Widget build(BuildContext context) {
-    final location = [
-      value.branchName,
-      value.branchCode,
-    ].whereType<String>().where((item) => item.isNotEmpty).join(' • ');
-    final locationStatus = switch (record.isWithinRadius) {
-      true => ('Di dalam area kantor', AppStatusTone.success),
-      false => ('Di luar area kantor', AppStatusTone.danger),
-      null => ('Belum diverifikasi', AppStatusTone.neutral),
-    };
-    return AppSurfaceCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final status = AppStatusChip(
-                label: locationStatus.$1 == 'Di dalam area kantor'
-                    ? 'Valid'
-                    : locationStatus.$1,
-                tone: locationStatus.$2,
-              );
-              final locationInfo = Row(
-                children: [
-                  AppIconTile(
-                    icon: Icons.location_on_outlined,
-                    foreground: locationStatus.$2 == AppStatusTone.danger
-                        ? Theme.of(context).colorScheme.error
-                        : null,
-                    background: locationStatus.$2 == AppStatusTone.danger
-                        ? Theme.of(context).colorScheme.errorContainer
-                        : null,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          locationStatus.$1,
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                        if (location.isNotEmpty)
-                          Text(
-                            location,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-              if (constraints.maxWidth < 300 ||
-                  MediaQuery.textScalerOf(context).scale(1) > 1.35) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [locationInfo, const SizedBox(height: 10), status],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: locationInfo),
-                  const SizedBox(width: 8),
-                  status,
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            value.requiresSelfie
-                ? 'GPS dan selfie diverifikasi server saat catat masuk.'
-                : 'Lokasi GPS diverifikasi server saat transaksi dikirim.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          if (value.gpsRadiusMeters case final radius?)
-            Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.xs),
-              child: Text(
-                'Radius kebijakan ${radius.round()} meter',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          for (final warning in value.warnings)
-            Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.xs),
-              child: Text(
-                warning,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AttendanceRecordCard extends StatelessWidget {
-  const _AttendanceRecordCard({required this.record});
-
-  final AttendanceEntity record;
-
-  @override
-  Widget build(BuildContext context) {
-    final duration = record.checkedInAt == null
-        ? null
-        : (record.checkedOutAt ?? DateTime.now()).difference(
-            record.checkedInAt!,
-          );
-    return AppSurfaceCard(
-      semanticLabel: 'Catatan absensi hari ini dari server',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: [
-              Text('Hari ini', style: Theme.of(context).textTheme.titleMedium),
-              AppStatusChip(
-                label: record.isActive
-                    ? 'Sedang bekerja'
-                    : record.checkedOutAt != null
-                    ? 'Selesai'
-                    : 'Belum masuk',
-                tone: record.isActive || record.checkedOutAt != null
-                    ? AppStatusTone.success
-                    : AppStatusTone.neutral,
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Expanded(
-                child: _TimeValue(
-                  label: 'Masuk',
-                  value: _time(record.checkedInAt),
-                ),
-              ),
-              Expanded(
-                child: _TimeValue(
-                  label: 'Pulang',
-                  value: _time(record.checkedOutAt),
-                ),
-              ),
-              Expanded(
-                child: _TimeValue(
-                  label: 'Durasi',
-                  value: duration == null
-                      ? 'Belum ada'
-                      : '${duration.inHours}j ${duration.inMinutes.remainder(60)}m',
-                ),
-              ),
-            ],
-          ),
-          if (record.requiresReview) ...[
-            const SizedBox(height: AppSpacing.md),
-            const AppStatusChip(
-              label: 'Menunggu tinjauan',
-              tone: AppStatusTone.warning,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _TimeValue extends StatelessWidget {
-  const _TimeValue({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: Theme.of(context).textTheme.labelMedium),
-      const SizedBox(height: AppSpacing.xxs),
-      Text(value, style: Theme.of(context).textTheme.titleMedium),
-    ],
-  );
 }
 
 class _SelfieCard extends StatelessWidget {
@@ -686,26 +513,35 @@ class _AttendanceError extends StatelessWidget {
     required this.error,
     required this.onRetry,
     this.onOpenSettings,
+    this.onCorrection,
   });
 
   final Object error;
   final VoidCallback onRetry;
   final VoidCallback? onOpenSettings;
+  final VoidCallback? onCorrection;
 
   @override
   Widget build(BuildContext context) => AppStateView(
     kind: error is LocationException
         ? AppViewStateKind.permission
         : AppViewStateKind.error,
-    title: 'Absensi belum tercatat',
+    title: error is AttendanceRefreshAfterPunchFailure
+        ? 'Absensi tercatat, status belum diperbarui'
+        : 'Absensi belum tercatat',
     message: _message(error),
-    actionLabel: onOpenSettings == null ? 'Coba lagi' : 'Buka pengaturan',
-    onAction: onOpenSettings ?? onRetry,
+    actionLabel: onCorrection != null
+        ? 'Ajukan koreksi'
+        : onOpenSettings == null
+        ? 'Coba lagi'
+        : 'Buka pengaturan',
+    onAction: onCorrection ?? onOpenSettings ?? onRetry,
   );
 }
 
 class _MonthPicker extends StatelessWidget {
   const _MonthPicker({
+    super.key,
     required this.month,
     required this.onPrevious,
     required this.onNext,
@@ -742,7 +578,11 @@ class _MonthPicker extends StatelessWidget {
 }
 
 class _HistoryStatusFilter extends StatelessWidget {
-  const _HistoryStatusFilter({required this.value, required this.onChanged});
+  const _HistoryStatusFilter({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
   final AttendanceStatus value;
   final ValueChanged<AttendanceStatus> onChanged;
 
@@ -965,3 +805,6 @@ String _message(Object error) => switch (error) {
   LocationException(:final message) => message,
   _ => 'Data tidak dapat diproses. Periksa koneksi lalu coba lagi.',
 };
+
+bool _requiresCorrection(Object error) =>
+    error is AttendanceCorrectionRequiredFailure;

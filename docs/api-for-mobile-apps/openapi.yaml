@@ -1,0 +1,4628 @@
+openapi: 3.1.0
+
+info:
+  title: HRIS Mobile API
+  version: "1.0.0"
+  summary: Permukaan API HRIS yang dipakai aplikasi mobile (Android/iOS).
+  description: |
+    Dokumen ini menjelaskan permukaan API yang dipakai aplikasi mobile HRIS
+    (Express + TypeScript + Prisma, multi-tenant).
+
+    **Cara dokumen ini dibuat.** Setiap path, parameter, field request dan kode
+    error di bawah dibaca langsung dari source backend:
+
+    - Daftar route yang termasuk permukaan mobile dipatok oleh
+      `backend/src/modules/mobile-routes.contract.test.ts`.
+    - Method, path, dan guard dibaca dari `backend/src/modules/*/**.routes.ts`.
+    - Bentuk request (wajib/opsional, min/max, enum) dibaca dari skema Zod di
+      `backend/src/modules/*/**.dto.ts` (atau `*.validation.ts`).
+    - Envelope sukses/error dibaca dari `backend/src/shared/core/Result.ts`,
+      `backend/src/shared/exceptions/AppError.ts`,
+      `backend/src/shared/middleware/ErrorHandler.ts`, dan dipatok oleh
+      `backend/src/shared/core/api-contract.test.ts`.
+
+    **Bentuk `data` tidak dijanjikan di sini.** Backend tidak punya skema
+    response per endpoint — payload dirakit di service/Prisma tanpa boundary
+    tervalidasi (lihat `docs/api-contract.md` bagian "Machine-readable
+    description"). Jadi `data` dimodelkan sebagai objek/array terbuka, kecuali
+    untuk beberapa endpoint yang bentuknya memang tertulis eksplisit di source
+    (login, unlock slip gaji, PIN status, absensi hari ini). Untuk endpoint
+    lain, pakai `docs/mobile-api-fixtures.json` di repo sebagai contoh — bukan
+    sebagai kontrak.
+
+    **Autentikasi mobile berbeda dari web.** Kirim `X-Client-Type: mobile` pada
+    `POST /auth/login` dan `POST /auth/refresh`; token dikembalikan di body
+    response, tidak ada cookie yang di-set, dan CSRF tidak berlaku. Lihat
+    `README.md` yang menyertai file ini.
+  contact:
+    name: Backend HRIS
+    url: https://github.com/
+  license:
+    name: UNLICENSED
+
+servers:
+  - url: "{baseUrl}/api/v1"
+    description: |
+      Prefix API berasal dari env `API_PREFIX`, default `/api/v1`
+      (`backend/src/config/index.ts:19`). `baseUrl` adalah origin server
+      (env `APP_URL`).
+    variables:
+      baseUrl:
+        default: https://localhost:3000
+        description: Origin server HRIS. Ganti sesuai environment.
+
+tags:
+  - name: auth
+    description: |
+      Login, refresh, logout, profil sesi, MFA, ganti/reset password.
+      Mount: `/auth` (`backend/src/app.ts`).
+  - name: attendance
+    description: |
+      Absensi self-service (check-in/out), riwayat, dan overtime.
+      Mount: `/attendance`.
+  - name: attendance-corrections
+    description: |
+      Pengajuan koreksi absensi dan antrean persetujuannya.
+      Mount: `/attendance-corrections`.
+  - name: leave
+    description: |
+      Cuti: tipe, pengajuan, saldo, lampiran, approve/reject/cancel.
+      Mount: `/leave`.
+  - name: payroll
+    description: |
+      Slip gaji self-service. Nominal ditahan sampai ada token unlock.
+      Mount: `/payroll`.
+  - name: workflow-engine
+    description: |
+      Approval Center: antrean approval milik sendiri, aksi, delegasi.
+      Mount: `/workflow-engine`.
+  - name: notification
+    description: |
+      Inbox notifikasi dan pendaftaran device token push (FCM/APNS).
+      Mount: `/notifications`.
+  - name: announcement
+    description: |
+      Pengumuman perusahaan: inbox, unread count, detail, tandai dibaca.
+      Mount: `/announcements`.
+  - name: employee
+    description: |
+      Profil karyawan. PII (NIK/NPWP/bank/BPJS) di-mask kecuali pemanggil
+      punya `employee:read-sensitive`. Mount: `/employees`.
+  - name: work-calendar
+    description: |
+      Kalender kerja milik sendiri, shift berikutnya, tukar shift, hari libur.
+      Mount: `/work-calendars`.
+  - name: asset
+    description: |
+      Aset yang dipegang karyawan. Mount: `/assets`.
+  - name: permission-request
+    description: |
+      Izin (sakit, terlambat, WFH, dll). Mount: `/permission-requests`.
+  - name: employee-loan
+    description: |
+      Pinjaman karyawan. Mount: `/employee-loans`.
+  - name: ewa
+    description: |
+      Earned Wage Access (tarik gaji lebih awal). Mount: `/ewa`.
+  - name: daily-activity
+    description: |
+      Laporan aktivitas harian berbasis GPS. Mount: `/daily-activities`.
+  - name: meta
+    description: |
+      Inventaris endpoint dan dokumen OpenAPI yang dibuat server.
+      Keduanya butuh `rbac:read`. Mount: `/meta`.
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ==================================================================
+  # AUTH
+  # ==================================================================
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: authLogin
+      summary: Login (varian mobile mengembalikan token di body)
+      security: []
+      description: |
+        Sumber: `backend/src/modules/auth/auth.routes.ts:162`,
+        `backend/src/modules/auth/auth.controller.ts:88-130`.
+
+        **Varian mobile.** Kirim header `X-Client-Type: mobile`
+        (case-insensitive, dibandingkan lowercase di
+        `auth.controller.ts:70`). Response berisi
+        `data.tokens.accessToken`, `data.tokens.refreshToken`, dan
+        `data.tokens.expiresIn`, dan **tidak ada** cookie `at`/`rt`/`csrf`
+        yang di-set.
+
+        **Varian web (tanpa header itu).** Token dipasang sebagai cookie
+        httpOnly `at` dan `rt`; body hanya berisi `data.tokens.expiresIn`
+        dan `data.csrfToken`.
+
+        Permission: 'tidak ada (route publik). Rate limit: dua limiter'
+        sekaligus — per IP dan per alamat email, keduanya
+        `max = RATE_LIMIT_AUTH_MAX` per `RATE_LIMIT_WINDOW_MS`, dan keduanya
+        `skipSuccessfulRequests: true` sehingga hanya kegagalan yang
+        menghabiskan kuota (`auth.routes.ts:56-79`). Backstop tambahan:
+        lockout akun di database.
+      parameters:
+        - $ref: '#/components/parameters/XClientType'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              tanpaMfa:
+                summary: Akun tanpa MFA
+                value:
+                  email: budi@contoh.co.id
+                  password: "RahasiaKuat1!"
+              denganMfa:
+                summary: Akun dengan MFA aktif
+                value:
+                  email: budi@contoh.co.id
+                  password: "RahasiaKuat1!"
+                  totp: "123456"
+      responses:
+        '200':
+          description: |
+            Login berhasil. Bentuk `data` tergantung `X-Client-Type`.
+          headers:
+            Cache-Control:
+              description: Selalu `private, no-store` pada route `/auth/*` (`auth.routes.ts:33`).
+              schema: { type: string }
+            Set-Cookie:
+              description: |
+                Hanya pada varian web. Varian mobile tidak menerima cookie.
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        oneOf:
+                          - $ref: '#/components/schemas/MobileLoginData'
+                          - $ref: '#/components/schemas/WebLoginData'
+              examples:
+                mobile:
+                  summary: X-Client-Type mobile
+                  value:
+                    success: true
+                    message: Login successful
+                    data:
+                      user:
+                        id: 11111111-1111-1111-1111-111111111111
+                        email: budi@contoh.co.id
+                        employeeId: 22222222-2222-2222-2222-222222222222
+                        name: Budi Santoso
+                        roles: [EMPLOYEE]
+                        permissions: ["leave:create", "leave:read", "payroll:read"]
+                        companyId: 33333333-3333-3333-3333-333333333333
+                        companyScope: ["33333333-3333-3333-3333-333333333333"]
+                        mustChangePassword: false
+                      tokens:
+                        accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                        refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                        expiresIn: 900
+        '401':
+          description: |
+            `AUTHENTICATION_FAILED` — email/password salah
+            (`auth.service.ts:225`), atau `MFA_REQUIRED` bila MFA aktif dan
+            `totp` tidak dikirim (`auth.service.ts:255`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+              examples:
+                salah:
+                  value: { success: false, code: AUTHENTICATION_FAILED, message: Invalid email or password }
+                mfa:
+                  value: { success: false, code: MFA_REQUIRED, message: MFA code required }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429':
+          description: |
+            `TOO_MANY_REQUESTS`. Dua sebab: rate limiter route
+            (`auth.routes.ts:50-79`, body `{ success, code, message }` tanpa
+            `data`), atau akun terkunci setelah terlalu banyak kegagalan
+            (`auth.service.ts:234`, `TooManyRequestsError`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: authRefresh
+      summary: Tukar refresh token menjadi access token baru
+      security: []
+      description: |
+        Sumber: `auth.routes.ts:163`, `auth.controller.ts:154-201`.
+
+        Refresh token diambil dari cookie `rt` **atau** dari body
+        `refreshToken` (`auth.controller.ts:59-61`). Mobile memakai body.
+
+        Dengan `X-Client-Type: mobile`, response membawa pasangan token baru
+        di body (rotasi: simpan keduanya, token lama tidak dipakai lagi).
+
+        Refresh **tidak** memeriksa `sessionVersion`: ia membaca ulang baris
+        user dan mencetak klaim baru (lihat komentar di
+        `backend/src/shared/security/session-revocation.ts:5-12`). Karena itu
+        refresh adalah jalan keluar yang benar ketika access token ditolak
+        akibat perubahan otoritas.
+
+        Permission: 'tidak ada. Rate limit: limiter per IP yang sama dengan'
+        login, `skipSuccessfulRequests: true`.
+      parameters:
+        - $ref: '#/components/parameters/XClientType'
+      requestBody:
+        required: false
+        description: |
+          Body boleh kosong untuk klien cookie (`auth.dto.ts` —
+          `refreshTokenSchema` mem-preprocess `null`/`undefined` menjadi
+          `{}`). Mobile **harus** mengirim `refreshToken`, karena tanpa
+          cookie dan tanpa body controller melempar 401 `No refresh token`
+          (`auth.controller.ts:164`).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: Token baru diterbitkan.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        oneOf:
+                          - $ref: '#/components/schemas/MobileLoginData'
+                          - $ref: '#/components/schemas/WebLoginData'
+        '401':
+          description: |
+            `AUTHENTICATION_FAILED` — tidak ada refresh token di cookie
+            maupun body, atau refresh token sudah dicabut/kedaluwarsa/
+            dipakai ulang. Pada titik ini aplikasi harus logout dan menampilkan
+            layar login.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429':
+          description: '`TOO_MANY_REQUESTS` dari limiter auth per IP.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: authLogout
+      summary: Cabut refresh token dan akhiri sesi
+      security: []
+      description: |
+        Sumber: `auth.routes.ts:169`, `auth.controller.ts:136-148`.
+
+        Route ini **sengaja tidak memakai `authenticate`** — komentar di
+        `auth.routes.ts:167-168` menyatakan logout harus tetap bekerja dengan
+        access token yang sudah kedaluwarsa, karena yang dibutuhkan hanyalah
+        refresh token. Jadi mobile cukup mengirim `refreshToken` di body;
+        header `Authorization` tidak wajib.
+
+        Server selalu menjawab 200 bila `authService.logout` tidak melempar.
+        Aplikasi tetap harus menghapus token lokal apa pun hasilnya.
+
+        Permission: tidak ada.
+      requestBody:
+        required: false
+        description: |
+          Tidak ada `validate()` pada route ini, jadi body tidak divalidasi
+          skema. Controller membaca `req.body?.refreshToken`
+          (`auth.controller.ts:60`).
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  description: Refresh token yang ingin dicabut.
+      responses:
+        '200':
+          description: '`data` adalah `null`.'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: 'null' }
+              example: { success: true, message: Logout successful, data: null }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: authGetProfile
+      summary: Profil sesi saat ini (roles, permissions, employeeId, companyId)
+      description: |
+        Sumber: `auth.routes.ts:174`, `auth.service.ts:566-581`.
+
+        Cara termurah bagi aplikasi untuk mengetahui `employeeId`,
+        `companyId`, `roles`, dan daftar `permissions` yang dipegang — pakai
+        daftar itu untuk menyembunyikan menu yang pasti akan dijawab 403.
+
+        Permission: tidak ada `authorize()`; cukup terautentikasi.
+      responses:
+        '200':
+          description: Profil sesi.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SessionProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/sessions:
+    get:
+      tags: [auth]
+      operationId: authListSessions
+      summary: Daftar sesi aktif milik sendiri
+      description: |
+        Sumber: `auth.routes.ts:175`. Tidak ada `authorize()`; cukup
+        terautentikasi. Bentuk `data` tidak dipatok skema.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/sessions/{id}:
+    delete:
+      tags: [auth]
+      operationId: authRevokeSession
+      summary: Cabut satu sesi (mis. logout dari perangkat lain)
+      description: |
+        Sumber: `auth.routes.ts:176`. Tidak ada `authorize()` dan tidak ada
+        `validate()` pada params, jadi format `id` tidak dipatok skema di
+        route.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: Id sesi dari `GET /auth/sessions`.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /auth/change-password:
+    post:
+      tags: [auth]
+      operationId: authChangePassword
+      summary: Ganti password sendiri
+      description: |
+        Sumber: `auth.routes.ts:170`, `auth.controller.ts:233-248`.
+
+        **Efek penting bagi aplikasi:** ganti password mencabut seluruh
+        refresh token dan menaikkan `sessionVersion`
+        (`auth.repository.ts:224`). Setelah 200, token yang dipegang aplikasi
+        tidak berlaku lagi — paksa user login ulang. Pesan server sendiri
+        berbunyi "Please log in again".
+
+        Permission: tidak ada `authorize()`; cukup terautentikasi.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '200':
+          description: '`data` adalah `null`. Sesi lama sudah mati.'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: 'null' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: '`CONFLICT` — password baru sama dengan yang lama (`auth.service.ts:522`).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      operationId: authForgotPassword
+      summary: Minta tautan reset password
+      security: []
+      description: |
+        Sumber: `auth.routes.ts:164`, `auth.controller.ts:204-214`.
+        Selalu `202` dengan pesan netral, apa pun apakah email terdaftar.
+        Rate limit: 5 request per window (`auth.routes.ts:89-96`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
+      responses:
+        '202':
+          description: Diterima. `data` adalah `null`.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: 'null' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429':
+          description: '`TOO_MANY_REQUESTS`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      operationId: authResetPassword
+      summary: Pasang password baru dengan token reset
+      security: []
+      description: |
+        Sumber: `auth.routes.ts:165`, `auth.controller.ts:217-227`.
+        Rate limit: 10 request per window (`auth.routes.ts:98-105`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '200':
+          description: Berhasil. `data` adalah `null`; user harus login ulang.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: 'null' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429':
+          description: '`TOO_MANY_REQUESTS`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /auth/mfa/setup:
+    post:
+      tags: [auth]
+      operationId: authSetupMfa
+      summary: Mulai pendaftaran MFA (TOTP)
+      description: |
+        Sumber: `auth.routes.ts:171`. Tidak ada `authorize()`; cukup
+        terautentikasi. Tidak ada body. Bentuk `data` tidak dipatok skema.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/mfa/enable:
+    post:
+      tags: [auth]
+      operationId: authEnableMfa
+      summary: Aktifkan MFA setelah memverifikasi kode
+      description: 'Sumber: `auth.routes.ts:172`. Tidak ada `authorize()`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MfaCodeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /auth/mfa/disable:
+    post:
+      tags: [auth]
+      operationId: authDisableMfa
+      summary: Matikan MFA setelah memverifikasi kode
+      description: 'Sumber: `auth.routes.ts:173`. Tidak ada `authorize()`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MfaCodeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /auth/csrf:
+    get:
+      tags: [auth]
+      operationId: authCsrfToken
+      summary: Terbitkan token CSRF (hanya relevan untuk klien cookie)
+      security: []
+      description: |
+        Sumber: `auth.routes.ts:108`, `auth.controller.ts:79-82`.
+
+        **Mobile tidak perlu endpoint ini.** CSRF double-submit hanya
+        diterapkan pada request yang membawa cookie auth `at`/`rt`; request
+        Bearer tanpa cookie dilewati
+        (`backend/src/shared/middleware/CsrfProtection.ts:71-75`).
+      responses:
+        '200':
+          description: '`data.csrfToken`.'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          csrfToken: { type: string }
+
+  # ==================================================================
+  # ATTENDANCE (self-service)
+  # ==================================================================
+  /attendance/me/today:
+    get:
+      tags: [attendance]
+      operationId: attendanceGetMyToday
+      summary: Status absensi hari ini + kebijakan cabang yang berlaku
+      description: |
+        Sumber: `backend/src/modules/attendance/attendance.routes.ts:26`,
+        `attendance.controller.ts:29-36`, `attendance.service.ts:436-451`.
+
+        Panggil ini **sebelum** menampilkan tombol absen: `canCheckIn` /
+        `canCheckOut` menentukan tombol mana yang aktif, dan
+        `context.allowedMethods` menentukan metode capture yang diizinkan
+        (`attendance.service.ts:488-501`).
+
+        Permission: tidak ada `authorize()` — identitas karyawan selalu
+        diambil dari sesi. Jika akun tidak tertaut `employeeId`+`companyId`,
+        jawabannya `400 BAD_REQUEST`.
+      responses:
+        '200':
+          description: Status hari ini.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/MyAttendanceToday' }
+        '400': { $ref: '#/components/responses/NotLinkedToEmployee' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /attendance/me:
+    get:
+      tags: [attendance]
+      operationId: attendanceListMine
+      summary: Riwayat absensi sendiri (ber-pagination)
+      description: |
+        Sumber: `attendance.routes.ts:27`, `attendance.controller.ts:8-27`.
+        Query divalidasi `myAttendanceQuerySchema`
+        (`attendance.dto.ts:114-118`) yang **tidak menerima** `employeeId`
+        atau `companyId` — keduanya diambil dari sesi.
+
+        Response memakai `Result.paginated`, jadi `meta` terisi. Dua header
+        tambahan dikirim dan di-expose lewat CORS: `X-Office-Timezone` dan
+        `X-Server-Date` (`attendance.controller.ts:23-24`,
+        `backend/src/app.ts:109`).
+
+        Permission: tidak ada `authorize()`.
+      parameters:
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          description: Filter bulan, format `YYYY-MM`. Kosong berarti tanpa filter bulan.
+          example: "2026-09"
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/Limit100Param20'
+      responses:
+        '200':
+          description: Riwayat absensi.
+          headers:
+            X-Office-Timezone:
+              description: Timezone kantor yang dipakai server untuk menghitung tanggal absensi.
+              schema: { type: string }
+              example: Asia/Jakarta
+            X-Server-Date:
+              description: Tanggal kalender kantor menurut server.
+              schema: { type: string }
+              example: "2026-10-04"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginatedEnvelope' }
+        '400': { $ref: '#/components/responses/NotLinkedToEmployee' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /attendance/me/check-in:
+    post:
+      tags: [attendance]
+      operationId: attendanceCheckInSelf
+      summary: Check-in (clock-in) untuk diri sendiri
+      description: |
+        Sumber: `attendance.routes.ts:28`, `attendance.controller.ts:38-47`,
+        `attendance.service.ts:453-464`.
+
+        Server yang menentukan waktu dan tanggal: `checkIn` diisi
+        `clock.now`, `date` diisi tanggal kalender kantor, `status` dipaksa
+        `PRESENT`, `source` dipaksa `MOBILE_SELF_SERVICE`. Aplikasi **tidak
+        boleh** mengirim waktu — skema `selfCheckInSchema`
+        (`attendance.dto.ts:120-128`) hanya menerima `method`, `notes`,
+        koordinat check-in, `faceRecognition`, `liveness`, `deviceGps`.
+
+        `method` harus ada di `context.allowedMethods` dari
+        `GET /attendance/me/today`; kalau tidak, service menjawab
+        `400 BAD_REQUEST` dengan pesan "Metode absensi ini tidak diizinkan..."
+        (`attendance.service.ts:517-519`).
+
+        Mendukung `Idempotency-Key` (`idempotency()` pada route). Status
+        sukses: `201`.
+
+        Permission: tidak ada `authorize()`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SelfCheckInRequest' }
+            examples:
+              gps:
+                summary: Metode MOBILE_GPS
+                value:
+                  method: MOBILE_GPS
+                  checkInLatitude: -6.2
+                  checkInLongitude: 106.816666
+                  deviceGps:
+                    isMockLocation: false
+                    accuracyMeters: 12
+                  notes: Masuk dari kantor pusat
+      responses:
+        '201':
+          description: Record absensi dibuat.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+        '400':
+          description: |
+            `BAD_REQUEST` — akun tidak tertaut karyawan
+            (`attendance.controller.ts:41`), sudah ada absensi untuk tanggal
+            itu (`attendance.service.ts:508`), metode tidak diizinkan
+            (`attendance.service.ts:518`), atau hari non-kerja tanpa izin
+            kebijakan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /attendance/me/check-out:
+    patch:
+      tags: [attendance]
+      operationId: attendanceCheckOutSelf
+      summary: Check-out (clock-out) untuk diri sendiri
+      description: |
+        Sumber: `attendance.routes.ts:29`, `attendance.controller.ts:49-58`,
+        `attendance.service.ts:466-476`.
+
+        Waktu checkout diisi server. Skema `selfCheckOutSchema` adalah
+        `checkoutAttendanceSchema` tanpa field `checkOut`
+        (`attendance.dto.ts:130`).
+
+        Server mencari record absensi terbuka terakhir dalam 36 jam terakhir
+        sehingga shift malam yang melewati batas tanggal tetap bisa checkout
+        (`attendance.service.ts:470-471`). Kalau tidak ada,
+        jawabannya `404 NOT_FOUND` — "No open attendance record found for
+        checkout"; perbaikan harus lewat pengajuan koreksi absensi.
+
+        Mendukung `Idempotency-Key`. Permission: tidak ada `authorize()`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SelfCheckOutRequest' }
+            examples:
+              gps:
+                value:
+                  method: MOBILE_GPS
+                  checkOutLatitude: -6.2
+                  checkOutLongitude: 106.816666
+      responses:
+        '200':
+          description: Record absensi diperbarui.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+        '400': { $ref: '#/components/responses/NotLinkedToEmployee' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: '`NOT_FOUND` — tidak ada record absensi terbuka untuk di-checkout.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /attendance/overtime:
+    get:
+      tags: [attendance]
+      operationId: attendanceListOvertime
+      summary: Daftar pengajuan overtime
+      description: |
+        Sumber: `attendance.routes.ts:34`.
+        **Permission: `attendance:read`** (alias legacy `att:read` juga
+        diterima, lihat `backend/src/shared/middleware/Authorize.ts:11-21`).
+
+        Query divalidasi `overtimeQuerySchema` (`attendance.dto.ts:155-161`)
+        yang **mewajibkan** `companyId`. Nilai itu dicek terhadap scope
+        pemanggil oleh `requireCompanyAccess()` sebelum dipercaya
+        (`backend/src/shared/middleware/CompanyScope.ts:29-49`).
+      parameters:
+        - name: companyId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+          description: Wajib. Harus berada dalam `companyScope` pemanggil.
+        - name: employeeId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+          description: Tidak dibatasi enum di skema Zod.
+        - name: startDate
+          in: query
+          required: false
+          schema: { type: string }
+          description: Tidak ada pola format di skema Zod.
+        - name: endDate
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [attendance]
+      operationId: attendanceCreateOvertime
+      summary: Ajukan overtime
+      description: |
+        Sumber: `attendance.routes.ts:35`.
+        **Permission: `attendance:create`.**
+
+        Skema `overtimeRequestSchema` (`attendance.dto.ts:151-153`):
+        `companyId` dibuang (selalu dari tenant aktif) dan `employeeId`
+        menjadi opsional — komentar di `attendance.dto.ts:149-150`
+        menyatakan `employeeId` hanya dihormati untuk user elevated;
+        karyawan biasa dipaksa ke identitas sesinya.
+
+        Mendukung `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OvertimeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /attendance/overtime/{id}/pay:
+    get:
+      tags: [attendance]
+      operationId: attendanceCalculateOvertimePay
+      summary: Hitung nilai bayar overtime
+      description: |
+        Sumber: '`attendance.routes.ts:36`. **Permission: `attendance:read`.**'
+        Tidak ada `validate()` pada params, jadi format `id` tidak dipatok di
+        route.
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /attendance/overtime/{id}/approve:
+    patch:
+      tags: [attendance]
+      operationId: attendanceApproveOvertime
+      summary: Setujui overtime
+      description: 'Sumber: `attendance.routes.ts:37`. **Permission: `attendance:approve`.** Tanpa body tervalidasi.'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /attendance/overtime/{id}/reject:
+    patch:
+      tags: [attendance]
+      operationId: attendanceRejectOvertime
+      summary: Tolak overtime
+      description: 'Sumber: `attendance.routes.ts:38`. **Permission: `attendance:approve`.** Tanpa body tervalidasi.'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /attendance/overtime/{id}/workflow:
+    get:
+      tags: [attendance]
+      operationId: attendanceGetOvertimeWorkflow
+      summary: Lihat instance workflow approval overtime
+      description: 'Sumber: `attendance.routes.ts:39`. **Permission: `attendance:read`.**'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /attendance/overtime/{id}/workflow-action:
+    patch:
+      tags: [attendance]
+      operationId: attendanceApplyOvertimeWorkflowAction
+      summary: Jalankan aksi approval pada workflow overtime
+      description: 'Sumber: `attendance.routes.ts:40`. **Permission: `attendance:approve`.**'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowActionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /attendance/{id}:
+    get:
+      tags: [attendance]
+      operationId: attendanceGetById
+      summary: Detail satu record absensi
+      description: |
+        Sumber: '`attendance.routes.ts:45`. **Permission: `attendance:read`.**'
+        Komentar di `attendance.service.ts:479-481` menegaskan bahwa data
+        scope karyawan tetap diterapkan di service, karena `req.params` tidak
+        melewati rewrite query `OWN_*`.
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================================================================
+  # ATTENDANCE CORRECTIONS
+  # ==================================================================
+  /attendance-corrections/my:
+    get:
+      tags: [attendance-corrections]
+      operationId: attendanceCorrectionListMine
+      summary: Riwayat pengajuan koreksi absensi sendiri
+      description: |
+        Sumber:
+        `backend/src/modules/attendance/attendance-correction.routes.ts:21`.
+
+        Route memvalidasi query dengan
+        `attendanceCorrectionListQuerySchema.pick({ status: true })` —
+        artinya **hanya `status`** yang diterima di sini; `employeeId` tidak,
+        karena identitas diambil dari sesi.
+
+        Permission: tidak ada `authorize()`.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED, CANCELLED]
+          description: 'Dari `attendance-correction.dto.ts:16`.'
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /attendance-corrections/my/{id}:
+    get:
+      tags: [attendance-corrections]
+      operationId: attendanceCorrectionGetMineById
+      summary: Detail satu pengajuan koreksi milik sendiri
+      description: |
+        Sumber: `attendance-correction.routes.ts:22`. Tidak ada
+        `authorize()` dan tidak ada `validate()` pada params.
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /attendance-corrections:
+    get:
+      tags: [attendance-corrections]
+      operationId: attendanceCorrectionListAll
+      summary: Daftar pengajuan koreksi (untuk penyetuju)
+      description: |
+        Sumber: `attendance-correction.routes.ts:23`.
+        **Permission: `attendance:read`.**
+      parameters:
+        - name: employeeId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED, CANCELLED]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [attendance-corrections]
+      operationId: attendanceCorrectionCreate
+      summary: Ajukan koreksi absensi
+      description: |
+        Sumber: `attendance-correction.routes.ts:25`. Tidak ada
+        `authorize()` — pengajuan adalah self-service.
+
+        Skema `createAttendanceCorrectionSchema`
+        (`attendance-correction.dto.ts:3-12`) mewajibkan minimal satu dari
+        `requestedCheckIn` / `requestedCheckOut`; kalau keduanya kosong,
+        jawabannya `422` dengan `errors[0].field = "requestedCheckIn"`.
+
+        Mendukung `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AttendanceCorrectionRequest' }
+            examples:
+              lupaCheckout:
+                summary: Lupa check-out
+                value:
+                  date: "2026-10-01T00:00:00.000Z"
+                  requestedCheckOut: "2026-10-01T10:05:00.000Z"
+                  reason: Lupa clock-out karena rapat sampai malam
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /attendance-corrections/{id}:
+    get:
+      tags: [attendance-corrections]
+      operationId: attendanceCorrectionGetById
+      summary: Detail pengajuan koreksi (untuk penyetuju)
+      description: 'Sumber: `attendance-correction.routes.ts:24`. **Permission: `attendance:read`.**'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /attendance-corrections/{id}/approve:
+    put:
+      tags: [attendance-corrections]
+      operationId: attendanceCorrectionApprove
+      summary: Setujui koreksi absensi
+      description: 'Sumber: `attendance-correction.routes.ts:26`. **Permission: `attendance:update`.** Tanpa body tervalidasi.'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /attendance-corrections/{id}/reject:
+    put:
+      tags: [attendance-corrections]
+      operationId: attendanceCorrectionReject
+      summary: Tolak koreksi absensi
+      description: |
+        Sumber: `attendance-correction.routes.ts:27`.
+        **Permission: `attendance:update`.** `rejectionReason` wajib
+        (`attendance-correction.dto.ts:19-21`).
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rejectionReason]
+              properties:
+                rejectionReason:
+                  type: string
+                  minLength: 3
+                  maxLength: 2000
+                  description: Di-trim sebelum divalidasi.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /attendance-corrections/{id}/workflow-action:
+    patch:
+      tags: [attendance-corrections]
+      operationId: attendanceCorrectionApplyWorkflowAction
+      summary: Jalankan aksi approval pada workflow koreksi absensi
+      description: 'Sumber: `attendance-correction.routes.ts:28`. **Permission: `attendance:update`.**'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowActionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ==================================================================
+  # LEAVE (cuti)
+  # ==================================================================
+  /leave/types:
+    get:
+      tags: [leave]
+      operationId: leaveListTypes
+      summary: Daftar tipe cuti yang tersedia
+      description: |
+        Sumber: `backend/src/modules/leave/leave.routes.ts:59`.
+        **Permission: `leave:read`.**
+
+        Panggil ini untuk mengisi dropdown "jenis cuti"; `id` yang dikembalikan
+        adalah `leaveTypeId` yang dipakai saat mengajukan cuti. Tidak ada
+        `validate()` untuk query, jadi tidak ada parameter query yang dipatok.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /leave:
+    get:
+      tags: [leave]
+      operationId: leaveListRequests
+      summary: Daftar pengajuan cuti dalam data scope pemanggil
+      description: |
+        Sumber: `leave.routes.ts:135`, `leave.controller.ts:31-40`.
+        **Permission: `leave:read`.**
+
+        Tidak ada `validate()` di route ini; controller membaca `companyId`,
+        `employeeId`, `status`, `leaveTypeId` langsung dari query.
+
+        **`companyId` jangan dikirim.** `requireCompanyAccess()` menimpa
+        `req.query.companyId` dengan company efektif sesi sebelum controller
+        membacanya (`backend/src/shared/middleware/CompanyScope.ts:140-142`).
+        Untuk karyawan dengan data scope `EMPLOYEE_SELF`, filter employee juga
+        disuntikkan di middleware yang sama, sehingga daftar ini sudah
+        tersaring ke pengajuan sendiri.
+
+        Tidak ada pagination di endpoint ini: response memakai
+        `Result.success`, bukan `Result.paginated`.
+      parameters:
+        - name: employeeId
+          in: query
+          required: false
+          schema: { type: string }
+          description: Tidak divalidasi skema. Dapat ditimpa oleh data-scope filter.
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+          description: Tidak divalidasi skema, tidak dibatasi enum.
+        - name: leaveTypeId
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [leave]
+      operationId: leaveCreateRequest
+      summary: Ajukan cuti
+      description: |
+        Sumber: `leave.routes.ts:141`, `leave.controller.ts:47-52`.
+        **Permission: `leave:create`.**
+
+        **Perhatikan urutan middleware.** `validate(createLeaveRequestSchema)`
+        berjalan **sebelum** controller, dan skema itu
+        (`leave.dto.ts:14-22`) mewajibkan `employeeId` **dan** `companyId`
+        sebagai UUID. Jadi aplikasi harus mengirim keduanya walaupun server
+        kemudian menimpanya:
+
+        - `companyId` ditimpa oleh `requireCompanyAccess()` dengan company
+          efektif sesi, dan nilai yang dikirim dicek lebih dulu terhadap
+          `companyScope` — nilai di luar scope dijawab `403 FORBIDDEN`
+          (`CompanyScope.ts:47-49`, `143-150`).
+        - `employeeId` ditimpa controller dengan `req.user.employeeId` bila
+          sesi punya employee (`leave.controller.ts:49`).
+
+        Ambil kedua nilai itu dari `GET /auth/me` (`data.employeeId`,
+        `data.companyId`) dan kirim apa adanya.
+
+        Lampiran: unggah lebih dulu lewat `POST /leave/attachments`, lalu
+        kirim URL hasilnya di field `attachment`.
+
+        Mendukung `Idempotency-Key`. Status sukses: `201`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateLeaveRequest' }
+            examples:
+              cutiTahunan:
+                value:
+                  employeeId: 22222222-2222-2222-2222-222222222222
+                  companyId: 33333333-3333-3333-3333-333333333333
+                  leaveTypeId: 44444444-4444-4444-4444-444444444444
+                  startDate: "2026-11-10T00:00:00.000Z"
+                  endDate: "2026-11-12T00:00:00.000Z"
+                  reason: Acara keluarga di luar kota
+      responses:
+        '201':
+          description: Pengajuan dibuat.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+        '400':
+          description: |
+            `BAD_REQUEST` — aturan bisnis cuti ditolak di service (mis. saldo
+            kurang, tanggal tumpang tindih, lampiran wajib untuk pengajuan
+            mendekati tanggal cuti). Pesan server menjelaskan sebabnya.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /leave/balances/employee:
+    get:
+      tags: [leave]
+      operationId: leaveGetBalances
+      summary: Saldo cuti per tipe
+      description: |
+        Sumber: `leave.routes.ts:137`, `leave.controller.ts:115-118`.
+        **Permission: `leave:read`.**
+
+        Controller membaca `req.query.employeeId`. Untuk melihat saldo sendiri,
+        kirim `employeeId` dari `GET /auth/me`. Permintaan di luar data scope
+        pemanggil ditolak/di-kosongkan oleh lapisan data scope.
+      parameters:
+        - name: employeeId
+          in: query
+          required: false
+          schema: { type: string }
+          description: |
+            Tidak divalidasi skema di route. Secara praktis wajib diisi —
+            service memakainya untuk mencari saldo.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /leave/attachments:
+    post:
+      tags: [leave]
+      operationId: leaveUploadAttachment
+      summary: Unggah lampiran cuti (multipart)
+      description: |
+        Sumber: `leave.routes.ts:143-150`, `leave.controller.ts:54-74`.
+        **Permission: `leave:create`.**
+
+        Field form bernama `attachment` (satu file). Batas ukuran dari
+        `config.upload.maxFileSize`; tipe MIME dibatasi
+        `config.upload.allowedMimes` — nilai persisnya berasal dari env, jadi
+        tidak dicantumkan di sini. MIME yang tidak didukung dijawab
+        `400 BAD_REQUEST` "Tipe file lampiran tidak didukung"
+        (`leave.routes.ts:48`). Isi file juga diperiksa magic-bytes
+        (`validateFileMagicBytes()`), jadi ekstensi palsu ditolak.
+
+        Response `201` membawa `data.url`; kirim URL itu sebagai `attachment`
+        pada `POST /leave`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [attachment]
+              properties:
+                attachment:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Lampiran tersimpan.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/LeaveAttachmentData' }
+        '400':
+          description: '`BAD_REQUEST` — file tidak ada atau tipe tidak didukung.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /leave/{id}:
+    get:
+      tags: [leave]
+      operationId: leaveGetRequestById
+      summary: Detail satu pengajuan cuti
+      description: 'Sumber: `leave.routes.ts:140`. **Permission: `leave:read`.** Tidak ada `validate()` pada params.'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /leave/{id}/cancel:
+    patch:
+      tags: [leave]
+      operationId: leaveCancelRequest
+      summary: Batalkan pengajuan cuti sendiri
+      description: |
+        Sumber: `leave.routes.ts:155`.
+        **Tidak ada `authorize()`** — komentar di `leave.routes.ts:153-154`
+        menyatakan kepemilikan/izin diperiksa di service (pengajuan sendiri,
+        atau pemegang `leave:approve`), supaya karyawan biasa tidak terhalang
+        guard route. Tanpa body tervalidasi.
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200':
+          description: 'Dibatalkan. Pesan server: "Pengajuan cuti dibatalkan".'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: '`FORBIDDEN` — bukan pengajuan sendiri dan tidak punya `leave:approve`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /leave/{id}/approve:
+    patch:
+      tags: [leave]
+      operationId: leaveApproveRequest
+      summary: Setujui pengajuan cuti
+      description: 'Sumber: `leave.routes.ts:151`. **Permission: `leave:approve`.** Tanpa body tervalidasi.'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /leave/{id}/reject:
+    patch:
+      tags: [leave]
+      operationId: leaveRejectRequest
+      summary: Tolak pengajuan cuti
+      description: 'Sumber: `leave.routes.ts:152`. **Permission: `leave:approve`.** Tanpa body tervalidasi.'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /leave/{id}/workflow:
+    get:
+      tags: [leave]
+      operationId: leaveGetWorkflow
+      summary: Lihat instance workflow approval cuti
+      description: 'Sumber: `leave.routes.ts:158`. **Permission: `leave:read`.**'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /leave/{id}/workflow-action:
+    patch:
+      tags: [leave]
+      operationId: leaveApplyWorkflowAction
+      summary: Jalankan aksi approval pada workflow cuti
+      description: 'Sumber: `leave.routes.ts:159`. **Permission: `leave:approve`.**'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowActionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /leave/encashment/policy:
+    get:
+      tags: [leave]
+      operationId: leaveGetEncashmentPolicy
+      summary: Kebijakan pencairan sisa cuti perusahaan
+      description: 'Sumber: `leave.routes.ts:66-70`. **Permission: `leave:read`.**'
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /leave/encashment:
+    get:
+      tags: [leave]
+      operationId: leaveListEncashments
+      summary: Daftar pengajuan pencairan sisa cuti
+      description: |
+        Sumber: '`leave.routes.ts:71-76`. **Permission: `leave:read`.**'
+        Query divalidasi `encashmentQuerySchema`
+        (`backend/src/modules/leave/leave-encashment.dto.ts`); parameter
+        detailnya tidak dicantumkan di sini karena tidak diperiksa — rujuk
+        file itu bila fitur ini dipakai.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [leave]
+      operationId: leaveRequestEncashment
+      summary: Ajukan pencairan sisa cuti
+      description: |
+        Sumber: '`leave.routes.ts:77-84`. **Permission: `leave:create`.**'
+        Body divalidasi `requestEncashmentSchema`
+        (`leave-encashment.dto.ts`) — field persisnya tidak diverifikasi untuk
+        dokumen ini. Mendukung `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: 'Lihat `requestEncashmentSchema` di `leave-encashment.dto.ts`.'
+              additionalProperties: true
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ==================================================================
+  # PAYROLL — slip gaji self-service
+  # ==================================================================
+  /payroll/payslips:
+    get:
+      tags: [payroll]
+      operationId: payrollListMyPayslips
+      summary: Daftar periode slip gaji sendiri (tanpa nominal)
+      description: |
+        Sumber: `backend/src/modules/payroll/payroll.routes.ts:399-403`,
+        `payroll.controller.ts:375-388`,
+        `payroll.service.ts:519-526`,
+        `payroll.repository.ts:470-482`.
+        **Permission: `payroll:read`.**
+
+        Walaupun guard-nya `payroll:read`, handler-nya adalah
+        `findMyPayslips`: `employeeId` **wajib** berasal dari token, bukan
+        query, "cegah intip slip gaji orang lain"
+        (`payroll.controller.ts:378`). Service menolak bila `employeeId`
+        sesi tidak cocok (`403 FORBIDDEN`, `payroll.service.ts:521`).
+
+        **Tanpa nominal.** `select` di repository hanya mengambil `id`,
+        `status`, `createdAt`, dan `payrollRun` (termasuk `period`) — tidak
+        ada `baseSalary`, `totalEarnings`, `totalDeductions`, atau `netPay`.
+        Controller menambahkan `locked: true` pada setiap baris
+        (`payroll.controller.ts:384`). Hanya run berstatus `APPROVED` atau
+        `DISBURSED` yang muncul, maksimal 20 baris terbaru (tidak ada
+        parameter pagination di route ini).
+
+        Untuk melihat nominal, lihat alur PIN di
+        `POST /payroll/payslips/my/unlock`.
+      responses:
+        '200':
+          description: 'Daftar periode slip gaji, semuanya `locked: true`.'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PayslipSummary' }
+        '400':
+          description: |
+            Akun tidak tertaut data karyawan. Catatan: controller menjawab ini
+            dengan `Result.error(...)` tanpa `code`
+            (`payroll.controller.ts:381`), jadi body-nya hanya
+            `{ success: false, message }`. Ini satu-satunya respons error pada
+            permukaan ini yang tidak membawa `code`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, const: false }
+                  message: { type: string }
+              example: { success: false, message: Akun ini tidak tertaut ke data karyawan }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /payroll/payslips/pin:
+    put:
+      tags: [payroll]
+      operationId: payrollSetPayslipPin
+      summary: Atur / ubah PIN slip gaji (6 digit)
+      description: |
+        Sumber: `payroll.routes.ts:336-341`,
+        `payroll.controller.ts:392-401`,
+        `backend/src/modules/payroll/payslip-pin.service.ts:70-89`.
+
+        **Tidak ada `authorize()`** — ini self-service murni; identitas selalu
+        dari sesi. Perlu `currentPassword` akun sebagai reautentikasi.
+
+        PIN harus tepat 6 digit angka (`payroll.validation.ts:36`). PIN
+        disimpan sebagai hash argon2id, tidak pernah dikembalikan atau
+        di-log.
+
+        Rate limit khusus: 30 request / 15 menit per IP
+        (`payroll.routes.ts:326-333`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetPayslipPinRequest' }
+            examples:
+              set:
+                value: { currentPassword: "RahasiaKuat1!", pin: "135791" }
+      responses:
+        '200':
+          description: 'PIN tersimpan. `data` adalah `null`; pesan "PIN slip gaji berhasil disimpan".'
+          headers:
+            Cache-Control:
+              description: '`no-store` (`payroll.controller.ts:96`).'
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: 'null' }
+        '400':
+          description: |
+            `BAD_REQUEST` — PIN bukan 6 digit
+            (`payslip-pin.service.ts:73`), atau akun tidak tertaut ke data
+            karyawan pada company aktif (`payslip-pin.service.ts:45`, `64`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            `PAYSLIP_PIN_REAUTH_FAILED` — `currentPassword` salah
+            (`payslip-pin.service.ts:77`). Status 403, bukan 401, jadi jangan
+            perlakukan sebagai sesi mati.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+              example: { success: false, code: PAYSLIP_PIN_REAUTH_FAILED, message: Kata sandi salah }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429':
+          description: Rate limiter PIN. Body limiter ini hanya `{ success, message }`, tanpa `code` (`payroll.routes.ts:332`).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, const: false }
+                  message: { type: string }
+
+  /payroll/payslips/pin/status:
+    get:
+      tags: [payroll]
+      operationId: payrollGetPayslipPinStatus
+      summary: Apakah PIN slip gaji sudah diatur / sedang terkunci
+      description: |
+        Sumber: `payroll.routes.ts:343-346`,
+        `payroll.controller.ts:403-412`,
+        `payslip-pin.service.ts:91-101`.
+
+        Tidak ada `authorize()`. Pakai ini untuk memilih layar: "atur PIN" bila
+        `pinSet` `false`, atau "masukkan PIN" bila `true`. `lockedUntil` hanya
+        muncul bila lock masih berjalan.
+      responses:
+        '200':
+          description: Status PIN.
+          headers:
+            Cache-Control:
+              description: '`no-store`.'
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PayslipPinStatus' }
+              examples:
+                belumDiatur:
+                  value: { success: true, message: Success, data: { pinSet: false } }
+                terkunci:
+                  value:
+                    success: true
+                    message: Success
+                    data: { pinSet: true, lockedUntil: "2026-10-04T07:45:00.000Z" }
+        '400':
+          description: '`BAD_REQUEST` — akun tidak tertaut data karyawan / company aktif.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /payroll/payslips/my/unlock:
+    post:
+      tags: [payroll]
+      operationId: payrollUnlockMyPayslips
+      summary: Verifikasi PIN → token buka slip gaji (berlaku 15 menit)
+      description: |
+        Sumber: `payroll.routes.ts:348-353`,
+        `payroll.controller.ts:414-423`,
+        `payslip-pin.service.ts:104-143`,
+        `backend/src/shared/payroll/payslip-pin.ts`.
+
+        **Inilah mekanisme buka nominal slip gaji untuk mobile.** PIN benar
+        menghasilkan `data.unlockToken` — token HMAC-SHA256 stateless yang
+        terikat ke `userId` + `employeeId` + `companyId`, berlaku
+        `PAYSLIP_UNLOCK_TTL_MINUTES = 15` menit
+        (`shared/payroll/payslip-pin.ts:20`, `74-84`).
+
+        Kirim token itu pada header **`X-Payslip-Unlock`** (bukan
+        `Authorization`, bukan `X-Payroll-Unlock-Token`) saat memanggil
+        `GET /payroll/payslips/my/{id}` dan
+        `GET /payroll/payslips/my/{id}/pdf`
+        (`payroll.controller.ts:28-32`). Simpan hanya di memori.
+
+        Lockout: 5 PIN salah mengunci 15 menit
+        (`PAYSLIP_PIN_MAX_ATTEMPTS = 5`,
+        `PAYSLIP_PIN_LOCK_MINUTES = 15`,
+        `shared/payroll/payslip-pin.ts:18-19`). Plus rate limiter 30 request
+        / 15 menit per IP.
+
+        Catatan desain (`shared/payroll/payslip-pin.ts:8-14`): token ini
+        **sengaja berbeda** dari `PayrollUnlockSession` jalur admin
+        (`X-Payroll-Unlock-Token`), supaya PIN 6 digit tidak pernah diterima
+        di jalur admin dan unlock PIN tidak mencabut sesi admin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayslipPinUnlockRequest' }
+            examples:
+              unlock:
+                value: { pin: "135791" }
+      responses:
+        '200':
+          description: PIN benar; token buka diterbitkan.
+          headers:
+            Cache-Control:
+              description: '`no-store`.'
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PayslipUnlockData' }
+              example:
+                success: true
+                message: Slip gaji terbuka
+                data:
+                  unlockToken: eyJ1c2VySWQiOiIxMSJ9.Zm9vYmFyc2lnbmF0dXJl
+                  expiresAt: "2026-10-04T08:00:00.000Z"
+        '400':
+          description: '`BAD_REQUEST` — akun tidak tertaut data karyawan / company aktif.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            `PAYSLIP_PIN_INVALID` — PIN salah dan belum mencapai batas lockout
+            (`payslip-pin.service.ts:128`). Tampilkan "PIN salah" dan biarkan
+            user mencoba lagi; jangan logout.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+              example: { success: false, code: PAYSLIP_PIN_INVALID, message: PIN salah }
+        '409':
+          description: |
+            `PAYSLIP_PIN_NOT_SET` — PIN belum pernah diatur
+            (`payslip-pin.service.ts:112`). Arahkan user ke
+            `PUT /payroll/payslips/pin`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+              example:
+                success: false
+                code: PAYSLIP_PIN_NOT_SET
+                message: PIN slip gaji belum diatur. Atur PIN terlebih dahulu.
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429':
+          description: |
+            Dua kemungkinan. `PAYSLIP_PIN_LOCKED` dari service
+            (`payslip-pin.service.ts:32-40`) — envelope error lengkap dengan
+            `code`, pesannya menyebutkan sisa menit. Atau rate limiter route
+            — body hanya `{ success, message }` tanpa `code`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+              example:
+                success: false
+                code: PAYSLIP_PIN_LOCKED
+                message: Terlalu banyak percobaan PIN salah. Coba lagi dalam 15 menit.
+
+  /payroll/payslips/my/{id}:
+    get:
+      tags: [payroll]
+      operationId: payrollGetMyPayslipDetail
+      summary: Detail lengkap slip gaji sendiri (butuh X-Payslip-Unlock)
+      description: |
+        Sumber: `payroll.routes.ts:362-367`,
+        `payroll.controller.ts:425-435`,
+        `payslip-pin.service.ts:164-207`.
+
+        Tidak ada `authorize()`. Yang menjaga endpoint ini adalah header
+        `X-Payslip-Unlock` (`payslipPinService.assertUnlockToken`). Scope
+        keras: `employeeId` dan `companyId` dari sesi, dan hanya payroll run
+        berstatus `APPROVED` atau `DISBURSED`
+        (`payslip-pin.service.ts:175`).
+
+        `data` berisi baris payslip lengkap (`baseSalary`, `totalEarnings`,
+        `totalDeductions`, `netPay`, `components[]`) plus `breakdown` hasil
+        `buildPayslipBreakdown`.
+      parameters:
+        - $ref: '#/components/parameters/PayslipIdPath'
+        - $ref: '#/components/parameters/XPayslipUnlock'
+      responses:
+        '200':
+          description: Detail slip gaji dengan nominal.
+          headers:
+            Cache-Control:
+              description: '`no-store, private`.'
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PayslipDetail' }
+        '400':
+          description: '`BAD_REQUEST` — akun tidak tertaut data karyawan / company aktif.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            `PAYSLIP_UNLOCK_INVALID` — header `X-Payslip-Unlock` tidak ada,
+            tanda tangannya salah, sudah kedaluwarsa, atau identitas di dalam
+            token tidak cocok dengan sesi sekarang
+            (`payslip-pin.service.ts:150-156`). Minta PIN lagi.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+              example:
+                success: false
+                code: PAYSLIP_UNLOCK_INVALID
+                message: Sesi buka slip gaji tidak valid atau sudah kedaluwarsa. Masukkan PIN kembali.
+        '404':
+          description: '`NOT_FOUND` — "Slip gaji tidak ditemukan" (termasuk bila slip itu bukan milik pemanggil).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /payroll/payslips/my/{id}/pdf:
+    get:
+      tags: [payroll]
+      operationId: payrollDownloadMyPayslipPdf
+      summary: Unduh PDF slip gaji sendiri (butuh X-Payslip-Unlock)
+      description: |
+        Sumber: `payroll.routes.ts:355-360`,
+        `payroll.controller.ts:437-454`.
+
+        Tidak ada `authorize()`; dijaga header `X-Payslip-Unlock` yang sama.
+        PDF dibuat on-demand (pdfkit), dikirim sebagai attachment, tanpa URL
+        publik dan tanpa file sementara. Batas 5 MB; di atasnya dijawab
+        `413 PAYSLIP_PDF_TOO_LARGE` (`payroll.controller.ts:444`).
+      parameters:
+        - $ref: '#/components/parameters/PayslipIdPath'
+        - $ref: '#/components/parameters/XPayslipUnlock'
+      responses:
+        '200':
+          description: Berkas PDF (bukan envelope JSON).
+          headers:
+            Content-Disposition:
+              description: '`attachment; filename="payslip-<id>.pdf"`.'
+              schema: { type: string }
+            Cache-Control:
+              description: '`no-store, private`.'
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: '`PAYSLIP_UNLOCK_INVALID` — lihat endpoint detail di atas.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: '`PAYSLIP_PDF_TOO_LARGE`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /payroll/payslips/unlock:
+    post:
+      tags: [payroll]
+      operationId: payrollUnlockPayslips
+      summary: Reautentikasi password (+TOTP) → grant payroll 5 menit (jalur non-PIN)
+      description: |
+        Sumber: `payroll.routes.ts:370-375`,
+        `backend/src/modules/payroll/payroll-unlock.service.ts`.
+        **Permission: `payroll:read`.**
+
+        Ini **jalur berbeda** dari PIN. Grant yang dihasilkan dikirim pada
+        header `X-Payroll-Unlock-Token` dan diperiksa pada
+        `GET /payroll/payslips/{id}` serta
+        `GET /payroll/payslips/{id}/pdf` — tetapi hanya untuk pemanggil yang
+        punya `employeeId` dan **tidak** elevated; pemegang
+        `payroll:process` / `payroll:approve` / `payroll:disburse` /
+        `payroll:*` atau `SUPER_ADMIN` dilewati
+        (`payroll.controller.ts:15-21`, `344-346`, `357-359`).
+
+        TTL grant: `PAYROLL_UNLOCK_TTL_SECONDS = 300` (5 menit)
+        (`payroll-unlock.service.ts:7`). Unlock baru mencabut grant lama
+        (`payroll-unlock.service.ts:53-56`). Lockout:
+        `PAYROLL_UNLOCK_LOCK_MINUTES = 15`.
+
+        **Untuk aplikasi mobile karyawan, pakai jalur PIN**
+        (`/payroll/payslips/my/*`): lebih cocok untuk UX mobile dan tidak
+        meminta password akun setiap kali.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayrollUnlockRequest' }
+      responses:
+        '200':
+          description: Grant diterbitkan.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PayrollUnlockData' }
+        '400':
+          description: '`BAD_REQUEST` — akun tidak tertaut employee dan company aktif.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401':
+          description: '`PAYROLL_REAUTH_FAILED` — password atau TOTP salah (`payroll-unlock.service.ts:60`).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429':
+          description: |
+            `PAYROLL_UNLOCK_LOCKED` (`payroll-unlock.service.ts:26-31`) atau
+            `ACCOUNT_LOCKED` (`payroll-unlock.service.ts:91`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /payroll/payslips/lock:
+    post:
+      tags: [payroll]
+      operationId: payrollLockPayslips
+      summary: Cabut seluruh grant payroll aktif milik sendiri
+      description: |
+        Sumber: '`payroll.routes.ts:377-381`. **Permission: `payroll:read`.**'
+        Tanpa body tervalidasi. Pasangan dari `/payroll/payslips/unlock`.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /payroll/payslips/{id}:
+    get:
+      tags: [payroll]
+      operationId: payrollGetPayslipById
+      summary: Detail slip gaji (jalur permission, bukan jalur PIN)
+      description: |
+        Sumber: `payroll.routes.ts:391-397`,
+        `payroll.controller.ts:342-353`.
+        **Permission: `payroll:read`.**
+
+        Bila pemanggil punya `employeeId` dan tidak elevated, header
+        `X-Payroll-Unlock-Token` wajib; tanpa itu jawabannya
+        `401 PAYROLL_UNLOCK_REQUIRED`
+        (`payroll-unlock.service.ts:24`). Setiap akses dicatat audit
+        (`auditView` `VIEW_PAYSLIP`).
+
+        Aplikasi mobile karyawan sebaiknya memakai
+        `GET /payroll/payslips/my/{id}` dengan PIN.
+      parameters:
+        - $ref: '#/components/parameters/PayslipIdPath'
+        - $ref: '#/components/parameters/XPayrollUnlockToken'
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401':
+          description: |
+            `AUTHENTICATION_FAILED`/`TOKEN_EXPIRED` (sesi), atau
+            `PAYROLL_UNLOCK_REQUIRED` bila grant payroll tidak ada/kedaluwarsa.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /payroll/payslips/{id}/pdf:
+    get:
+      tags: [payroll]
+      operationId: payrollDownloadPayslipPdf
+      summary: Unduh PDF slip gaji (jalur permission)
+      description: |
+        Sumber: `payroll.routes.ts:383-389`,
+        `payroll.controller.ts:355-374`.
+        **Permission: `payroll:read`.** Aturan `X-Payroll-Unlock-Token` sama
+        dengan endpoint detail. Audit: `DOWNLOAD_PAYSLIP`. Batas 5 MB.
+      parameters:
+        - $ref: '#/components/parameters/PayslipIdPath'
+        - $ref: '#/components/parameters/XPayrollUnlockToken'
+      responses:
+        '200':
+          description: Berkas PDF.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401':
+          description: 'Sesi mati, atau `PAYROLL_UNLOCK_REQUIRED`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: '`PAYSLIP_PDF_TOO_LARGE`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ==================================================================
+  # WORKFLOW ENGINE — Approval Center
+  # ==================================================================
+  /workflow-engine/instances/my-approvals:
+    get:
+      tags: [workflow-engine]
+      operationId: workflowListMyApprovals
+      summary: Antrean approval yang menunggu keputusan saya
+      description: |
+        Sumber:
+        `backend/src/modules/workflow-engine/workflow-engine.routes.ts:35`,
+        `workflow-engine.controller.ts:168-182`.
+        **Permission: `workflow:approve`.**
+
+        Route ini terdaftar sebelum `/instances/:id` sehingga `my-approvals`
+        tidak dibaca sebagai id (dipatok oleh
+        `mobile-routes.contract.test.ts`).
+
+        Response memakai `Result.paginated`, jadi `meta` terisi
+        (`workflow-engine.controller.ts:179`).
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/Limit100Param20'
+      responses:
+        '200':
+          description: Antrean approval.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginatedEnvelope' }
+        '400':
+          description: |
+            Controller menjawab `Result.error('companyId is required')` tanpa
+            `code` bila company efektif tidak terbentuk
+            (`workflow-engine.controller.ts:173`). Normalnya tidak terjadi,
+            karena `requireCompanyAccess()` sudah menyuntikkan company sesi.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, const: false }
+                  message: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /workflow-engine/instances/{id}:
+    get:
+      tags: [workflow-engine]
+      operationId: workflowGetInstanceById
+      summary: Detail satu instance approval
+      description: |
+        Sumber: `workflow-engine.routes.ts:36`,
+        `workflow-engine.controller.ts:184-192`.
+        **Permission: `workflow:read`.**
+
+        Tidak ditemukan dijawab `404` dengan `Result.error('Workflow
+        instance not found')` — body tanpa `code`
+        (`workflow-engine.controller.ts:189`).
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: 'Tidak ditemukan. Body hanya `{ success: false, message }`, tanpa `code`.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, const: false }
+                  message: { type: string }
+
+  /workflow-engine/instances/{id}/actions:
+    post:
+      tags: [workflow-engine]
+      operationId: workflowApplyAction
+      summary: Setujui / tolak / eskalasi satu instance
+      description: |
+        Sumber: `workflow-engine.routes.ts:38`.
+        **Permission: `workflow:approve`.**
+
+        Self-approval ditolak, termasuk untuk super admin (perilaku service).
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowActionRequest' }
+            examples:
+              setujui:
+                value: { action: APPROVE, comment: Disetujui, lanjut ke HR }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '400':
+          description: '`BAD_REQUEST` — transisi domain tidak berlaku.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /workflow-engine/instances/bulk-approve:
+    post:
+      tags: [workflow-engine]
+      operationId: workflowBulkApproval
+      summary: Aksi approval massal (1–100 instance)
+      description: |
+        Sumber: `workflow-engine.routes.ts:39`,
+        `workflow-engine.dto.ts` (`bulkApprovalSchema`).
+        **Permission: `workflow:approve`.**
+
+        Bisa sukses parsial — periksa `results[]` per instance, jangan
+        anggap 200 berarti semuanya berhasil.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkApprovalRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /workflow-engine/delegations:
+    get:
+      tags: [workflow-engine]
+      operationId: workflowListDelegations
+      summary: Daftar delegasi approval milik sendiri
+      description: |
+        Sumber: `workflow-engine.routes.ts:42`. **Tidak ada `authorize()`** —
+        komentar di `workflow-engine.routes.ts:41` menyebut ini self-service:
+        pendelegasi adalah pemanggil.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [workflow-engine]
+      operationId: workflowCreateDelegation
+      summary: Delegasikan approval ke orang lain untuk suatu rentang tanggal
+      description: 'Sumber: `workflow-engine.routes.ts:43`. Tidak ada `authorize()`. Status sukses `201`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDelegationRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /workflow-engine/delegations/{id}/revoke:
+    patch:
+      tags: [workflow-engine]
+      operationId: workflowRevokeDelegation
+      summary: Cabut delegasi approval
+      description: 'Sumber: `workflow-engine.routes.ts:44`. Tidak ada `authorize()`. Tanpa body tervalidasi.'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================================================================
+  # NOTIFICATION
+  # ==================================================================
+  /notifications/device-tokens:
+    post:
+      tags: [notification]
+      operationId: notificationRegisterDevice
+      summary: Daftarkan device token push (FCM / APNS)
+      description: |
+        Sumber:
+        `backend/src/modules/notification/notification.routes.ts:14`,
+        `notification.controller.ts` (`registerDevice`),
+        `backend/src/modules/notification/mobile-device.dto.ts:3-13`.
+
+        Tidak ada `authorize()`. Panggil setelah login dan setiap kali token
+        push berubah. `installationId` adalah id instalasi aplikasi yang
+        stabil milik aplikasi sendiri — dipakai server untuk mengganti token
+        lama perangkat yang sama.
+
+        Aturan silang: `provider: APNS` hanya boleh dengan
+        `platform: IOS`; pelanggaran dijawab `422` dengan
+        `errors[0].field = "provider"` (`mobile-device.dto.ts:10-13`).
+
+        Mendukung `Idempotency-Key`. Status sukses `201`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterDeviceRequest' }
+            examples:
+              android:
+                value:
+                  installationId: a1b2c3d4e5f6a7b8
+                  platform: ANDROID
+                  provider: FCM
+                  token: fcm-token-minimal-dua-puluh-karakter
+                  appVersion: 1.4.0
+                  deviceModel: Pixel 8
+      responses:
+        '201':
+          description: 'Token terdaftar. Pesan: "Device token registered".'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      tags: [notification]
+      operationId: notificationUnregisterDevice
+      summary: Hapus device token push
+      description: |
+        Sumber: `notification.routes.ts:15`,
+        `mobile-device.dto.ts:15-17`.
+
+        Perhatikan: ini `DELETE` **dengan body JSON** berisi
+        `installationId`. Beberapa HTTP client mobile perlu konfigurasi
+        khusus untuk mengirim body pada DELETE.
+
+        Panggil saat logout, agar push tidak lagi dikirim ke perangkat itu.
+        Mendukung `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [installationId]
+              properties:
+                installationId:
+                  type: string
+                  minLength: 8
+                  maxLength: 200
+                  description: Di-trim sebelum divalidasi.
+      responses:
+        '200':
+          description: '`data` adalah `null`; pesan "Device token unregistered".'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: 'null' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /notifications:
+    get:
+      tags: [notification]
+      operationId: notificationList
+      summary: Inbox notifikasi (ber-pagination)
+      description: |
+        Sumber: `notification.routes.ts:16`,
+        `notification.controller.ts:38`,
+        `notification.dto.ts:17-21`.
+        Tidak ada `authorize()`. Response memakai `Result.paginated`.
+
+        Perhatikan `limit` default di sini **50**, berbeda dari endpoint lain
+        yang default 20.
+      parameters:
+        - name: unreadOnly
+          in: query
+          required: false
+          schema: { type: string, enum: ['true', 'false'] }
+          description: |
+            String, bukan boolean — skema Zod-nya `z.enum(['true','false'])`.
+            Kirim literal `"true"` / `"false"`.
+        - $ref: '#/components/parameters/PageParam'
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Daftar notifikasi.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginatedEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /notifications/unread-count:
+    get:
+      tags: [notification]
+      operationId: notificationGetUnreadCount
+      summary: Jumlah notifikasi belum dibaca (untuk badge)
+      description: 'Sumber: `notification.routes.ts:17`, `notification.controller.ts:45`. Tidak ada `authorize()`.'
+      responses:
+        '200':
+          description: '`data.count`.'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CountData' }
+              example: { success: true, message: Success, data: { count: 3 } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /notifications/read:
+    put:
+      tags: [notification]
+      operationId: notificationMarkAsRead
+      summary: Tandai sejumlah notifikasi sebagai dibaca
+      description: |
+        Sumber: `notification.routes.ts:18`, `notification.dto.ts:13-15`.
+        Tidak ada `authorize()`. `ids` wajib, minimal satu UUID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+      responses:
+        '200':
+          description: '`data` adalah `null`; pesan "Notifications marked as read".'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: 'null' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /notifications/read-all:
+    put:
+      tags: [notification]
+      operationId: notificationMarkAllAsRead
+      summary: Tandai semua notifikasi sebagai dibaca
+      description: 'Sumber: `notification.routes.ts:19`. Tidak ada `authorize()`, tanpa body tervalidasi.'
+      responses:
+        '200':
+          description: '`data` adalah `null`.'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: 'null' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /notifications/{id}:
+    delete:
+      tags: [notification]
+      operationId: notificationDelete
+      summary: Hapus satu notifikasi
+      description: 'Sumber: `notification.routes.ts:20`. Tidak ada `authorize()` dan tidak ada `validate()` pada params.'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200':
+          description: '`data` adalah `null`; pesan default "Deleted successfully".'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: 'null' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================================================================
+  # ANNOUNCEMENT
+  # ==================================================================
+  /announcements:
+    get:
+      tags: [announcement]
+      operationId: announcementList
+      summary: Inbox pengumuman untuk karyawan
+      description: |
+        Sumber:
+        `backend/src/modules/announcement/announcement.routes.ts:70`,
+        `announcement.controller.ts:32`,
+        `announcement.dto.ts:3-7`.
+
+        Tidak ada `authorize()` — audiens pengumuman dihitung dari identitas
+        sesi. Response memakai `Result.paginated`.
+
+        Seluruh router announcement mengirim
+        `Cache-Control: private, no-store` (`announcement.routes.ts:17-20`).
+      parameters:
+        - name: unreadOnly
+          in: query
+          required: false
+          schema: { type: string, enum: ['true', 'false'] }
+          description: String literal, bukan boolean.
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/Limit100Param20'
+      responses:
+        '200':
+          description: Daftar pengumuman.
+          headers:
+            Cache-Control:
+              description: '`private, no-store`.'
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginatedEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /announcements/unread-count:
+    get:
+      tags: [announcement]
+      operationId: announcementGetUnreadCount
+      summary: Jumlah pengumuman belum dibaca (untuk badge)
+      description: 'Sumber: `announcement.routes.ts:71`, `announcement.controller.ts:39`. Tidak ada `authorize()`.'
+      responses:
+        '200':
+          description: '`data.count`.'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CountData' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /announcements/{id}:
+    get:
+      tags: [announcement]
+      operationId: announcementGetDetail
+      summary: Detail satu pengumuman
+      description: |
+        Sumber: `announcement.routes.ts:72`, `announcement.controller.ts:45`.
+        Tidak ada `authorize()`. `id` divalidasi UUID
+        (`announcement.dto.ts:9-11`), jadi id non-UUID dijawab `422`.
+      parameters: [{ $ref: '#/components/parameters/PathIdUuid' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /announcements/{id}/read:
+    put:
+      tags: [announcement]
+      operationId: announcementMarkRead
+      summary: Tandai pengumuman sebagai dibaca
+      description: |
+        Sumber: `announcement.routes.ts:73`, `announcement.controller.ts:52`.
+        Tidak ada `authorize()`, tanpa body tervalidasi. Mendukung
+        `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/PathIdUuid'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 'Pesan "Announcement marked as read".'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ==================================================================
+  # EMPLOYEE
+  # ==================================================================
+  /employees/me/reporting-line:
+    get:
+      tags: [employee]
+      operationId: employeeGetMyReportingLine
+      summary: Garis pelaporan saya (atasan dan supervisor)
+      description: |
+        Sumber:
+        `backend/src/modules/employee/employee.routes.ts:52`.
+
+        **Tidak ada `authorize()`** — self-service. Route ini terdaftar
+        sebelum `/:id` sehingga `me` tidak dibaca sebagai id karyawan
+        (dipatok oleh `mobile-routes.contract.test.ts`).
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /employees/{id}:
+    get:
+      tags: [employee]
+      operationId: employeeGetById
+      summary: Detail karyawan (PII di-mask kecuali punya employee:read-sensitive)
+      description: |
+        Sumber: `employee.routes.ts:85`,
+        `backend/src/modules/employee/employee-pii.ts`.
+        **Permission: `employee:read`.**
+
+        **Masking PII.** Enam field di-mask menjadi "bintang + 4 karakter
+        terakhir" kecuali pemanggil berhak membaca mentah
+        (`employee-pii.ts:10-17`, `29-32`):
+        `idNumber` (NIK), `taxId` (NPWP), `bankAccount`,
+        `bankAccountHolder`, `bpjsKetenagakerjaan`, `bpjsKesehatan`.
+
+        Format mask persis: `'*'.repeat(len - 4) + nilai.slice(-4)` untuk
+        panjang > 4, dan `'****'` (tepat empat bintang) untuk panjang <= 4.
+        Jadi NIK 16 digit `3174010101900001` menjadi
+        `************0001` — **panjang string tetap sama**, sehingga jangan
+        dipakai untuk validasi, perhitungan, atau dikirim balik sebagai nilai
+        asli. Field bernilai `null` tetap `null` (tidak di-mask).
+
+        Siapa yang boleh baca mentah (`employee-pii.ts:21-27`): role
+        `SUPER_ADMIN`, `GROUP_ADMIN`, `COMPANY_ADMIN`, `HR_MANAGER`,
+        `HR_STAFF`, **atau** permission `employee:read-sensitive` /
+        `employee:*`. Aplikasi bisa memeriksanya dari
+        `GET /auth/me` → `data.permissions` / `data.roles`, dan menampilkan
+        label "disamarkan" bila tidak berhak.
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200':
+          description: Detail karyawan, PII mungkin ter-mask.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/EmployeeWithMaskablePii' }
+              examples:
+                terMask:
+                  summary: Pemanggil tanpa employee:read-sensitive
+                  value:
+                    success: true
+                    message: Success
+                    data:
+                      id: 22222222-2222-2222-2222-222222222222
+                      fullName: Budi Santoso
+                      idNumber: "************0001"
+                      taxId: "***********1234"
+                      bankAccount: "*******5678"
+                      bpjsKesehatan: "*********4321"
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /employees/{id}/attachments:
+    get:
+      tags: [employee]
+      operationId: employeeListAttachments
+      summary: Metadata lampiran dokumen karyawan
+      description: 'Sumber: `employee.routes.ts:180`. **Permission: `employee:read`.**'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /employees/{id}/families:
+    get:
+      tags: [employee]
+      operationId: employeeListFamilies
+      summary: Data keluarga karyawan
+      description: 'Sumber: `employee.routes.ts:144`. **Permission: `employee:read`.**'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /employees/{id}/emergency-contacts:
+    get:
+      tags: [employee]
+      operationId: employeeListEmergencyContacts
+      summary: Kontak darurat karyawan
+      description: 'Sumber: `employee.routes.ts:156`. **Permission: `employee:read`.**'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================================================================
+  # WORK CALENDAR (self-service)
+  # ==================================================================
+  /work-calendars/me/resolved:
+    get:
+      tags: [work-calendar]
+      operationId: workCalendarGetMyResolved
+      summary: Kalender kerja saya yang sudah diresolusi
+      description: |
+        Sumber:
+        `backend/src/modules/work-calendar/work-calendar.routes.ts:69`.
+        **Tidak ada `authorize()`** — self-service; tenant tetap dari sesi.
+        Tidak ada `validate()` untuk query, jadi tidak ada parameter query
+        yang dipatok skema.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /work-calendars/me/next-shift:
+    get:
+      tags: [work-calendar]
+      operationId: workCalendarGetMyNextShift
+      summary: Shift kerja saya berikutnya (boleh melewati batas bulan)
+      description: |
+        Sumber: `work-calendar.routes.ts:70`,
+        `work-calendar.dto.ts:129-137`.
+        Tidak ada `authorize()`. Resolver ini sengaja mampu melintasi bulan
+        kalender (dipatok oleh `mobile-routes.contract.test.ts`).
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: |
+            Tanggal awal pencarian, `YYYY-MM-DD`. Divalidasi sebagai tanggal
+            kalender yang benar-benar ada (`work-calendar.dto.ts:131-136`);
+            `2026-02-30` ditolak `422`. Kosong berarti mulai dari hari ini
+            menurut server.
+          example: "2026-10-04"
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /work-calendars/holidays/list:
+    get:
+      tags: [work-calendar]
+      operationId: workCalendarListHolidays
+      summary: Daftar hari libur
+      description: |
+        Sumber: `work-calendar.routes.ts:63`.
+        **Tidak ada `authorize()`** — komentar di `work-calendar.routes.ts:62`
+        menyebut ini data referensi self-service yang aman; scope tenant tetap
+        dari sesi. Tidak ada `validate()` untuk query.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /work-calendars/shift-swaps/my:
+    get:
+      tags: [work-calendar]
+      operationId: workCalendarListMyShiftSwaps
+      summary: Permintaan tukar shift yang saya ajukan
+      description: 'Sumber: `work-calendar.routes.ts:72`. Tidak ada `authorize()`, tidak ada `validate()` untuk query.'
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /work-calendars/shift-swaps/candidates/my:
+    get:
+      tags: [work-calendar]
+      operationId: workCalendarListMyShiftSwapCandidates
+      summary: Kandidat rekan yang bisa diajak tukar shift
+      description: 'Sumber: `work-calendar.routes.ts:71`. Tidak ada `authorize()`.'
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /work-calendars/shift-swaps/approvals/my:
+    get:
+      tags: [work-calendar]
+      operationId: workCalendarListMyShiftSwapApprovals
+      summary: Permintaan tukar shift yang menunggu persetujuan saya
+      description: 'Sumber: `work-calendar.routes.ts:73`. Tidak ada `authorize()`.'
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /work-calendars/shift-swaps:
+    post:
+      tags: [work-calendar]
+      operationId: workCalendarCreateShiftSwap
+      summary: Ajukan tukar shift dengan rekan
+      description: |
+        Sumber: `work-calendar.routes.ts:74`,
+        `work-calendar.dto.ts:96-100`. Tidak ada `authorize()`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateShiftSwapRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /work-calendars/shift-swaps/{requestId}/cancel:
+    patch:
+      tags: [work-calendar]
+      operationId: workCalendarCancelShiftSwap
+      summary: Batalkan permintaan tukar shift sendiri
+      description: 'Sumber: `work-calendar.routes.ts:75`. Tidak ada `authorize()`, tanpa body tervalidasi.'
+      parameters: [{ $ref: '#/components/parameters/RequestIdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /work-calendars/shift-swaps/{requestId}/approve:
+    patch:
+      tags: [work-calendar]
+      operationId: workCalendarApproveShiftSwap
+      summary: Setujui permintaan tukar shift
+      description: |
+        Sumber: `work-calendar.routes.ts:76`,
+        `work-calendar.dto.ts:102-104`. **Tidak ada `authorize()`** — rekan
+        yang diminta bertukar adalah penyetujunya, jadi izin diperiksa di
+        service, bukan di route.
+      parameters: [{ $ref: '#/components/parameters/RequestIdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewShiftSwapRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /work-calendars/shift-swaps/{requestId}/reject:
+    patch:
+      tags: [work-calendar]
+      operationId: workCalendarRejectShiftSwap
+      summary: Tolak permintaan tukar shift
+      description: 'Sumber: `work-calendar.routes.ts:77`. Tidak ada `authorize()`.'
+      parameters: [{ $ref: '#/components/parameters/RequestIdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewShiftSwapRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ==================================================================
+  # ASSET
+  # ==================================================================
+  /assets/my:
+    get:
+      tags: [asset]
+      operationId: assetListMine
+      summary: Aset yang sedang / pernah saya pegang
+      description: |
+        Sumber: `backend/src/modules/asset/asset.routes.ts:14`,
+        `asset.controller.ts:23`, `asset.dto.ts:26-30`.
+
+        **Tidak ada `authorize()`** — self-service. Route ini terdaftar
+        sebelum `/:id` (dipatok oleh `mobile-routes.contract.test.ts`).
+        Response memakai `Result.paginated`.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ACTIVE, RETURNED, ALL]
+            default: ACTIVE
+          description: '`ACTIVE` (default) hanya yang masih dipegang; `ALL` termasuk yang sudah dikembalikan.'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/Limit100Param20'
+      responses:
+        '200':
+          description: Daftar aset.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginatedEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /assets/{id}:
+    get:
+      tags: [asset]
+      operationId: assetGetById
+      summary: Detail satu aset
+      description: |
+        Sumber: `asset.routes.ts:16`.
+        **Permission: `employee:read`** — perhatikan, modul asset memakai
+        resource `employee`, bukan `asset`.
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================================================================
+  # PERMISSION REQUEST (izin)
+  # ==================================================================
+  /permission-requests/my:
+    get:
+      tags: [permission-request]
+      operationId: permissionRequestListMine
+      summary: Riwayat pengajuan izin sendiri
+      description: |
+        Sumber:
+        `backend/src/modules/permission-request/permission-request.routes.ts:57`.
+        **Tidak ada `authorize()`** — self-service. Tidak ada `validate()`
+        untuk query, jadi tidak ada parameter query yang dipatok skema.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /permission-requests:
+    post:
+      tags: [permission-request]
+      operationId: permissionRequestCreate
+      summary: Ajukan izin (sakit, terlambat, WFH, dll)
+      description: |
+        Sumber: `permission-request.routes.ts:59`,
+        `backend/src/modules/permission-request/permission-request.dto.ts:3-14`.
+        **Tidak ada `authorize()`** — self-service.
+
+        Catatan penting dari komentar DTO (`permission-request.dto.ts:11-13`):
+        kebijakan bisnisnya adalah izin **selalu wajib lampiran**, tetapi
+        `attachment` dibiarkan optional di skema agar service bisa melempar
+        `400 BAD_REQUEST` dengan pesan Indonesia yang jelas, bukan error Zod
+        generik. Jadi kirim `attachment` (URL hasil
+        `POST /permission-requests/attachments`) walaupun skema menyebutnya
+        opsional.
+
+        Mendukung `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePermissionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '400':
+          description: '`BAD_REQUEST` — termasuk lampiran yang wajib tapi tidak dikirim.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /permission-requests/{id}/cancel:
+    patch:
+      tags: [permission-request]
+      operationId: permissionRequestCancel
+      summary: Batalkan pengajuan izin sendiri
+      description: 'Sumber: `permission-request.routes.ts:69`. Tidak ada `authorize()`, tanpa body tervalidasi.'
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================================================================
+  # EMPLOYEE LOAN (pinjaman)
+  # ==================================================================
+  /employee-loans/types:
+    get:
+      tags: [employee-loan]
+      operationId: employeeLoanListTypes
+      summary: Jenis pinjaman yang tersedia
+      description: |
+        Sumber:
+        `backend/src/modules/employee-loan/employee-loan.routes.ts:16`.
+        Tidak ada `authorize()`. `id` dari sini dipakai sebagai `loanTypeId`.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /employee-loans/my:
+    get:
+      tags: [employee-loan]
+      operationId: employeeLoanListMine
+      summary: Pinjaman saya
+      description: 'Sumber: `employee-loan.routes.ts:19`. Tidak ada `authorize()`, tidak ada `validate()` untuk query.'
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /employee-loans:
+    post:
+      tags: [employee-loan]
+      operationId: employeeLoanCreate
+      summary: Ajukan pinjaman
+      description: |
+        Sumber: `employee-loan.routes.ts:21`,
+        `backend/src/modules/employee-loan/employee-loan.dto.ts:3-9`.
+        **Tidak ada `authorize()`** — self-service. Mendukung
+        `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateLoanRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /employee-loans/{id}/cancel:
+    patch:
+      tags: [employee-loan]
+      operationId: employeeLoanCancel
+      summary: Batalkan pengajuan pinjaman sendiri
+      description: 'Sumber: `employee-loan.routes.ts:24`. Tidak ada `authorize()`. Mendukung `Idempotency-Key`.'
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+
+  # ==================================================================
+  # EWA (Earned Wage Access)
+  # ==================================================================
+  /ewa/my:
+    get:
+      tags: [ewa]
+      operationId: ewaListMine
+      summary: Pengajuan EWA saya
+      description: |
+        Sumber: `backend/src/modules/ewa/ewa.routes.ts:31-35`,
+        `ewa.dto.ts` (`listEWARequestsSchema`).
+
+        **Tidak ada `authorize()`** — komentar di `ewa.routes.ts:28-30`
+        menjelaskan controller men-scope ketat ke `employeeId` pemanggil,
+        sehingga permission `ewa:read` (untuk membaca data orang lain) tidak
+        diperlukan.
+
+        Seluruh router EWA mengirim `Cache-Control: no-store`
+        (`ewa.routes.ts:21`).
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, PAID, DEDUCTED, REJECTED, CANCELLED]
+        - name: employeeId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: Diterima skema, tetapi controller tetap men-scope ke pemanggil pada route `/my`.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /ewa/my/limit:
+    get:
+      tags: [ewa]
+      operationId: ewaGetMyLimit
+      summary: Batas nominal EWA yang boleh saya tarik
+      description: |
+        Sumber: `ewa.routes.ts:36-40`, `ewa.dto.ts` (`ewaLimitQuerySchema`).
+        Tidak ada `authorize()`.
+
+        `earnedGross` dideklarasikan `z.never().optional()` — artinya klien
+        **tidak boleh** mengirimnya; server menghitung sendiri. Mengirimnya
+        menghasilkan `422`.
+      parameters:
+        - name: percent
+          in: query
+          required: false
+          schema: { type: number, minimum: 1, maximum: 100 }
+          description: Persentase yang ingin disimulasikan.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /ewa:
+    post:
+      tags: [ewa]
+      operationId: ewaCreateRequest
+      summary: Ajukan penarikan gaji lebih awal
+      description: |
+        Sumber: `ewa.routes.ts:41-48`, `ewa.dto.ts` (`createEWARequestSchema`).
+        **Permission: `ewa:create`.** Mendukung `Idempotency-Key`.
+
+        `earnedGross`, `periodStart`, `periodEnd` adalah `z.never()` —
+        dihitung server, tidak boleh dikirim.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateEwaRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /ewa/{id}/cancel:
+    post:
+      tags: [ewa]
+      operationId: ewaCancelRequest
+      summary: Batalkan pengajuan EWA
+      description: |
+        Sumber: '`ewa.routes.ts:55-62`. **Permission: `ewa:update`.**'
+        `id` divalidasi UUID. Mendukung `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/PathIdUuid'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ==================================================================
+  # DAILY ACTIVITY
+  # ==================================================================
+  /daily-activities/my:
+    get:
+      tags: [daily-activity]
+      operationId: dailyActivityListMine
+      summary: Laporan aktivitas harian saya
+      description: |
+        Sumber:
+        `backend/src/modules/daily-activity/daily-activity.routes.ts:27-30`.
+        **Tidak ada `authorize()`** — komentar di
+        `daily-activity.routes.ts:23-26` menjelaskan controller men-scope
+        ketat ke `employeeId` pemanggil. Tidak ada `validate()` untuk query.
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /daily-activities:
+    post:
+      tags: [daily-activity]
+      operationId: dailyActivityCreate
+      summary: Kirim laporan aktivitas harian (dengan GPS)
+      description: |
+        Sumber: `daily-activity.routes.ts:31-38`,
+        `backend/src/modules/daily-activity/daily-activity.dto.ts:13-30`.
+        **Permission: `daily-activity:create`.** `daily-activity` tidak ada
+        di tabel alias legacy (`Authorize.ts:12-18`), jadi yang dicek persis
+        `daily-activity:create` atau `daily-activity:*`. Nama `da:create`
+        yang muncul di `docs/mobile-permission-matrix.md` adalah kolom `code`
+        di tabel permission (`01-permissions.seed.ts:143`); token membawa
+        bentuk `resource:action` (`auth.service.ts:60-68`), bukan `code`,
+        sehingga keduanya tetap cocok di server.
+
+        `latitude` dan `longitude` wajib. Mendukung `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDailyActivityRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /daily-activities/{id}/complete:
+    post:
+      tags: [daily-activity]
+      operationId: dailyActivityComplete
+      summary: Tandai aktivitas harian selesai
+      description: |
+        Sumber: `daily-activity.routes.ts:52-59`,
+        `daily-activity.dto.ts:40-43`.
+        **Permission: `daily-activity:update`.** Mendukung `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteDailyActivityRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/GenericSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ==================================================================
+  # META
+  # ==================================================================
+  /meta/endpoints:
+    get:
+      tags: [meta]
+      operationId: metaListEndpoints
+      summary: Inventaris seluruh route server (admin)
+      description: |
+        Sumber: `backend/src/app.ts:249-258`.
+        **Permission: `rbac:read`.**
+
+        Endpoint ini ada dan memang berguna untuk tim integrasi, tetapi
+        **admin-gated**: komentar di `app.ts:245-246` menyatakan peta
+        permukaan API tidak boleh publik. Akun karyawan biasa akan
+        mendapat `403 FORBIDDEN`.
+
+        Response **bukan** envelope `Result` biasa — controller-nya menulis
+        `{ success: true, data: { count, endpoints } }` secara langsung, jadi
+        tidak ada field `message` (`app.ts:256`).
+
+        Pendamping: `GET /meta/openapi.json` (`app.ts:263-275`) mengembalikan
+        dokumen OpenAPI 3.1 yang dibuat dari router Express saat request,
+        dengan permission yang sama.
+      responses:
+        '200':
+          description: Inventaris endpoint, diurutkan menurut `path`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MetaEndpointsResponse' }
+              example:
+                success: true
+                data:
+                  count: 2
+                  endpoints:
+                    - path: /api/v1/attendance/me/today
+                      methods: [GET]
+                      middlewares: [authenticate, anonymous]
+                    - path: /api/v1/auth/login
+                      methods: [POST]
+                      middlewares: [anonymous]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: '`FORBIDDEN` — butuh `rbac:read`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /meta/openapi.json:
+    get:
+      tags: [meta]
+      operationId: metaGetOpenApiDocument
+      summary: Dokumen OpenAPI 3.1 yang dibuat server saat request (admin)
+      description: |
+        Sumber: `app.ts:263-275`,
+        `backend/src/shared/openapi/generate.ts`.
+        **Permission: `rbac:read`.**
+
+        Dokumen ini diturunkan dari router yang hidup, jadi tidak bisa
+        melenceng dari server. Setiap operasi membawa path/method asli,
+        skema request hasil konversi dari Zod,
+        `x-query-schema` / `x-path-schema`, `x-required-permissions` dari
+        guard `authorize()`, dan `security: bearerAuth` bila route
+        terautentikasi. Bentuk response hanya dideskripsikan sebagai envelope
+        bersama.
+
+        Pakai ini untuk memverifikasi bahwa file `openapi.yaml` ini masih
+        sinkron dengan server.
+      responses:
+        '200':
+          description: Dokumen OpenAPI (bukan envelope `Result`).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: '`FORBIDDEN` — butuh `rbac:read`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+components:
+
+  # ------------------------------------------------------------------
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Access token JWT HS256 yang didapat dari `POST /auth/login`
+        (dengan `X-Client-Type: mobile`) atau `POST /auth/refresh`.
+
+        Kirim sebagai `Authorization: Bearer <accessToken>`.
+
+        Cara server membacanya (`backend/src/shared/middleware/Authenticate.ts:23-34`):
+        cookie `at` diperiksa **lebih dulu**, baru header
+        `Authorization`. Format header harus tepat dua bagian dipisah satu
+        spasi, dengan skema `Bearer` (case-sensitive) — `bearer` huruf kecil
+        tidak diterima.
+
+        Klaim token (`backend/src/shared/security/JWTHandler.ts:92-119`):
+        `sub`, `email`, `sessionVersion`, `employeeId`, `companyId`,
+        `companyScope`, `groupId`, `permissions`, `roles`, `hasGlobalRole`,
+        `maxRolePriority`, `type: 'access'`, `iss` (env `JWT_ISSUER`),
+        `aud: 'hrms-api'`.
+
+        Masa hidup default: access token `15m`, refresh token `7d`
+        (`backend/src/config/index.ts:54-55`). Nilai pastinya ada di
+        `data.tokens.expiresIn` (detik) pada response login/refresh — pakai
+        itu, jangan hardcode.
+
+  # ------------------------------------------------------------------
+  parameters:
+    XClientType:
+      name: X-Client-Type
+      in: header
+      required: false
+      schema:
+        type: string
+        enum: [mobile]
+      description: |
+        Kirim `mobile` agar token dikembalikan di body response dan tidak ada
+        cookie auth yang di-set. Dibandingkan setelah di-lowercase
+        (`backend/src/modules/auth/auth.controller.ts:70`), jadi `Mobile`
+        atau `MOBILE` juga bekerja. Hanya berpengaruh pada
+        `POST /auth/login` dan `POST /auth/refresh`.
+
+        **Catatan CORS:** header ini tidak ada di `allowedHeaders`
+        (`backend/src/app.ts:108`). Klien native tidak terkena CORS, tetapi
+        WebView/browser akan terhalang preflight.
+      example: mobile
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        pattern: '^[!-~]{16,128}$'
+      description: |
+        Kunci idempoten opsional untuk mutasi
+        (`backend/src/shared/middleware/Idempotency.ts`).
+
+        Format: 16–128 karakter ASCII tampak (`!` sampai `~`), tanpa spasi.
+        Format salah dijawab `422 VALIDATION_ERROR` dengan
+        `errors[0].field = "Idempotency-Key"`.
+
+        Scope kunci: `companyId : userId : method : path : key`, jadi satu
+        kunci boleh dipakai ulang untuk aksi yang berbeda. Respons sukses
+        (2xx) disimpan 24 jam; pengulangan dengan kunci dan payload yang sama
+        mengembalikan respons tersimpan beserta header
+        `Idempotency-Replayed: true`.
+
+        Hanya respons sukses disimpan — kegagalan validasi, permission,
+        konflik, dan error server tetap bisa dicoba ulang dengan kunci yang
+        sama (`Idempotency.ts:128-131`).
+      example: 9f2b7c1e4a6d8f03b5c7e9a1
+
+    XPayslipUnlock:
+      name: X-Payslip-Unlock
+      in: header
+      required: true
+      schema: { type: string, maxLength: 1024 }
+      description: |
+        Token hasil `POST /payroll/payslips/my/unlock`. Berlaku 15 menit,
+        terikat ke user + employee + company. Tanpa header ini (atau dengan
+        token kedaluwarsa) jawabannya `403 PAYSLIP_UNLOCK_INVALID`
+        (`backend/src/modules/payroll/payslip-pin.service.ts:146-157`).
+
+        **Catatan CORS:** header ini tidak terdaftar di `allowedHeaders`
+        (`app.ts:108`); relevan untuk WebView/browser, tidak untuk klien
+        native.
+
+    XPayrollUnlockToken:
+      name: X-Payroll-Unlock-Token
+      in: header
+      required: false
+      schema: { type: string, maxLength: 256 }
+      description: |
+        Grant hasil `POST /payroll/payslips/unlock` (jalur password/TOTP,
+        bukan PIN). Berlaku 5 menit. Wajib bagi pemanggil yang punya
+        `employeeId` dan tidak elevated; diabaikan untuk pemegang
+        `payroll:process`/`approve`/`disburse`/`*` dan `SUPER_ADMIN`
+        (`backend/src/modules/payroll/payroll.controller.ts:15-21`).
+        Terdaftar di `allowedHeaders` CORS (`app.ts:108`).
+
+    PathId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: |
+        Id sumber daya. Route ini tidak memakai `validate()` untuk params,
+        jadi format id tidak dipatok skema di lapisan route.
+
+    PathIdUuid:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Divalidasi sebagai UUID oleh route; nilai lain dijawab `422`.
+
+    PayslipIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 36
+        pattern: '^[A-Za-z0-9_-]+$'
+      description: |
+        Id payslip. **Bukan selalu UUID** — komentar di
+        `backend/src/modules/payroll/payroll.validation.ts:24-26` menjelaskan
+        data seed/impor memakai kode seperti `ps-EMP001-2606`, sehingga
+        validasinya charset aman + panjang maksimum kolom (36). Jangan
+        memvalidasi sebagai UUID di sisi aplikasi.
+
+    RequestIdPath:
+      name: requestId
+      in: path
+      required: true
+      schema: { type: string }
+      description: Id permintaan tukar shift. Tidak dipatok skema di route.
+
+    PageParam:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+      description: Nomor halaman, dimulai dari 1.
+
+    Limit100Param20:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      description: Jumlah baris per halaman. Maksimum 100.
+
+  # ------------------------------------------------------------------
+  responses:
+    GenericSuccess:
+      description: |
+        Sukses. `data` tidak dipatok skema per endpoint — backend tidak punya
+        skema response, jadi bentuknya ditentukan service/Prisma.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+
+    Unauthorized:
+      description: |
+        `401`. Dua `code` yang mungkin, dan **keduanya berarti "refresh dulu,
+        baru logout kalau refresh juga gagal"**:
+
+        - `TOKEN_EXPIRED` — access token kedaluwarsa menurut `exp`
+          (`backend/src/shared/security/JWTHandler.ts:122-124` →
+          `AppError.ts:46-50`).
+        - `AUTHENTICATION_FAILED` — semua kegagalan autentikasi lain, termasuk
+          **`sessionVersion` token tidak lagi sama dengan baris user**
+          (`backend/src/shared/middleware/Authenticate.ts:90-91` →
+          `AppError.ts:40-44`). Lihat bagian "Invalidasi sesi" di README.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          examples:
+            kedaluwarsa:
+              value: { success: false, code: TOKEN_EXPIRED, message: Token has expired }
+            sesiDicabut:
+              summary: sessionVersion sudah naik (otoritas berubah)
+              value:
+                success: false
+                code: AUTHENTICATION_FAILED
+                message: Access token session is no longer valid
+            tanpaToken:
+              value: { success: false, code: AUTHENTICATION_FAILED, message: No authorization token provided }
+
+    Forbidden:
+      description: |
+        `403 FORBIDDEN`. Tiga sumber yang perlu dibedakan di UI:
+
+        1. Permission kurang — `authorize()` melempar
+           `Insufficient permissions. Required: <resource>:<action>`
+           (`backend/src/shared/middleware/Authorize.ts:52-58`). Pesan ini
+           menyebutkan permission yang diminta, jadi 403 bisa didiagnosis.
+        2. Company di luar scope — `requireCompanyAccess()` melempar
+           `You do not have access to this company data`
+           (`backend/src/shared/middleware/CompanyScope.ts:47-49`).
+        3. Aturan domain di service — mis. membatalkan cuti orang lain.
+
+        Jangan di-retry dan jangan dianggap sesi mati.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          examples:
+            permission:
+              value:
+                success: false
+                code: FORBIDDEN
+                message: 'Insufficient permissions. Required: leave:approve'
+            company:
+              value:
+                success: false
+                code: FORBIDDEN
+                message: You do not have access to this company data
+
+    NotFound:
+      description: |
+        `404 NOT_FOUND`. Tidak ada, **atau** di luar tenant/data-scope
+        pemanggil — keduanya sengaja tidak bisa dibedakan
+        (`docs/api-contract.md`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+    Conflict:
+      description: |
+        `409 CONFLICT`. Tabrakan state: duplikat, sudah disetujui, tanggal
+        tumpang tindih. Pelanggaran unique constraint database juga dipetakan
+        ke sini dengan pesan Indonesia
+        (`backend/src/shared/middleware/ErrorHandler.ts:10-17`, `85-93`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+    IdempotencyConflict:
+      description: |
+        `409 CONFLICT`. Selain konflik state biasa, endpoint ini bisa
+        menjawab 409 karena `Idempotency-Key`
+        (`backend/src/shared/middleware/Idempotency.ts:72-80`):
+
+        - "Idempotency-Key was already used with a different request payload"
+        - "A request with this Idempotency-Key is still in progress"
+
+        Keduanya memakai `code: CONFLICT`; bedakan dari `message`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+    ValidationError:
+      description: |
+        `422 VALIDATION_ERROR`. Validasi skema Zod gagal; `errors[]`
+        menyebutkan field yang bermasalah
+        (`backend/src/shared/middleware/RequestValidator.ts:22-28`,
+        `ErrorHandler.ts:28-42`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationErrorEnvelope' }
+          example:
+            success: false
+            code: VALIDATION_ERROR
+            message: Validation failed
+            errors:
+              - field: email
+                message: Invalid email format
+
+    NotLinkedToEmployee:
+      description: |
+        `400 BAD_REQUEST` — akun yang login tidak tertaut ke data karyawan
+        dan/atau company aktif, sehingga route self-service tidak punya
+        identitas untuk dipakai (mis.
+        `backend/src/modules/attendance/attendance.controller.ts:10-12`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example:
+            success: false
+            code: BAD_REQUEST
+            message: Akun ini tidak tertaut ke data karyawan dan perusahaan
+
+  # ------------------------------------------------------------------
+  schemas:
+
+    # ===== Envelope =====
+    SuccessEnvelope:
+      type: object
+      required: [success, message, data]
+      description: |
+        Envelope sukses dari `Result.success/created/updated/deleted/noContent`
+        (`backend/src/shared/core/Result.ts:17-87`), dipatok oleh
+        `backend/src/shared/core/api-contract.test.ts`.
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          minLength: 1
+          description: |
+            Selalu ada dan tidak kosong. Teks untuk operator — **jangan
+            dipakai sebagai cabang logika**, kecuali untuk membedakan dua
+            pesan 409 idempotency yang `code`-nya sama.
+        data:
+          description: |
+            Selalu ada. `null` untuk respons delete / no-content. Bentuknya
+            tidak dipatok skema per endpoint.
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    PaginatedEnvelope:
+      type: object
+      required: [success, message, data, meta]
+      description: |
+        Envelope dari `Result.paginated` (`Result.ts:26-47`). Endpoint yang
+        memakainya di dokumen ini: `GET /attendance/me`,
+        `GET /notifications`, `GET /announcements`, `GET /assets/my`,
+        `GET /workflow-engine/instances/my-approvals`.
+      properties:
+        success: { type: boolean, const: true }
+        message: { type: string, minLength: 1 }
+        data:
+          type: array
+          items:
+            description: Bentuk baris tidak dipatok skema.
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    PaginationMeta:
+      type: object
+      required: [page, limit, total, totalPages, hasNextPage, hasPreviousPage]
+      description: |
+        Dari `PaginationMeta` (`Result.ts:1-8`) dan `Result.paginated`
+        (`Result.ts:33-45`).
+      properties:
+        page: { type: integer, minimum: 1 }
+        limit: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+        totalPages:
+          type: integer
+          minimum: 0
+          description: '`ceil(total / limit)`; `0` untuk hasil kosong.'
+        hasNextPage:
+          type: boolean
+          description: '`page < totalPages`. Cara paling aman untuk memutuskan memuat halaman berikutnya.'
+        hasPreviousPage:
+          type: boolean
+          description: '`page > 1`.'
+      example:
+        page: 2
+        limit: 10
+        total: 25
+        totalPages: 3
+        hasNextPage: true
+        hasPreviousPage: true
+
+    ErrorEnvelope:
+      type: object
+      required: [success, code, message]
+      description: |
+        Envelope error dari `AppError.toJSON()` / `errorHandler`
+        (`backend/src/shared/exceptions/AppError.ts:24-31`,
+        `backend/src/shared/middleware/ErrorHandler.ts:45-82`).
+
+        Catatan: ada beberapa respons di permukaan ini yang **tidak** membawa
+        `code` — `Result.error(...)` tanpa argumen kedua
+        (`Result.ts:49-55`) dan body pesan rate-limiter tertentu. Tempat
+        persisnya ditandai pada endpoint masing-masing.
+      properties:
+        success: { type: boolean, const: false }
+        code:
+          type: string
+          description: |
+            Katalog yang dipatok `api-contract.test.ts`:
+            `BAD_REQUEST` (400), `AUTHENTICATION_FAILED` (401),
+            `TOKEN_EXPIRED` (401), `FORBIDDEN` (403), `NOT_FOUND` (404),
+            `CONFLICT` (409), `VALIDATION_ERROR` (422),
+            `TOO_MANY_REQUESTS` (429), `DATABASE_ERROR` (500),
+            `SERVICE_UNAVAILABLE` (503).
+
+            Dari app shell: `NOT_FOUND` untuk route tak dikenal
+            (`app.ts:278-284`), `INTERNAL_ERROR` sebagai fallback
+            (`ErrorHandler.ts:118-125`), `UPLOAD_ERROR` untuk kegagalan
+            multer (`ErrorHandler.ts:95-108`).
+
+            Kode domain yang muncul di permukaan mobile ini:
+            `MFA_REQUIRED` (401), `PAYSLIP_PIN_NOT_SET` (409),
+            `PAYSLIP_PIN_INVALID` (403), `PAYSLIP_PIN_LOCKED` (429),
+            `PAYSLIP_PIN_REAUTH_FAILED` (403),
+            `PAYSLIP_UNLOCK_INVALID` (403),
+            `PAYSLIP_PDF_TOO_LARGE` (413),
+            `PAYROLL_UNLOCK_REQUIRED` (401),
+            `PAYROLL_REAUTH_FAILED` (401),
+            `PAYROLL_UNLOCK_LOCKED` (429), `ACCOUNT_LOCKED` (429).
+        message:
+          type: string
+          description: Teks penjelas. Sebagian dalam bahasa Indonesia, sebagian Inggris.
+        correlationId:
+          type: string
+          description: |
+            Hanya muncul bila request mengirim `X-Correlation-Id` atau
+            `X-Request-Id` (`ErrorHandler.ts:25`, `56-58`). Kirim salah satu
+            dari aplikasi agar laporan bug bisa ditelusuri di log server.
+        errors:
+          type: array
+          description: Hanya pada `VALIDATION_ERROR` (dan `AppError` yang dibuat dengan daftar field).
+          items: { $ref: '#/components/schemas/FieldError' }
+
+    ValidationErrorEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - type: object
+          required: [errors]
+          properties:
+            code: { type: string, const: VALIDATION_ERROR }
+            errors:
+              type: array
+              minItems: 1
+              items: { $ref: '#/components/schemas/FieldError' }
+
+    FieldError:
+      type: object
+      required: [field, message]
+      description: |
+        Dari `AppError.errors` (`AppError.ts:5`). `field` adalah jalur Zod
+        yang digabung titik, mis. `provider`, `stages.0.level`
+        (`RequestValidator.ts:23-26`).
+      properties:
+        field: { type: string }
+        message: { type: string }
+
+    # ===== Auth =====
+    LoginRequest:
+      type: object
+      required: [email, password]
+      description: 'Dari `loginSchema` (`backend/src/modules/auth/auth.dto.ts:3-16`).'
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          description: Di-lowercase dan di-trim server sebelum dipakai.
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+        totp:
+          type: string
+          minLength: 6
+          maxLength: 20
+          description: |
+            Kode TOTP 6 digit **atau** recovery code. Hanya perlu bila MFA
+            akun aktif. Tanpa ini pada akun MFA, server menjawab
+            `401 MFA_REQUIRED` — gunakan itu sebagai sinyal untuk menampilkan
+            layar kode, lalu kirim ulang login lengkap dengan `totp`.
+
+    RefreshRequest:
+      type: object
+      description: |
+        Dari `refreshTokenSchema` (`auth.dto.ts:22-29`). Body `null`/kosong
+        di-preprocess menjadi `{}` agar klien cookie boleh mengirim body
+        kosong; klien mobile wajib mengisi `refreshToken`.
+      properties:
+        refreshToken:
+          type: string
+          minLength: 1
+
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      description: 'Dari `changePasswordSchema` (`auth.dto.ts:31-44`).'
+      properties:
+        currentPassword:
+          type: string
+          minLength: 1
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: |
+            Wajib memuat minimal satu huruf besar, satu huruf kecil, satu
+            angka, dan satu karakter spesial dari
+            `!@#$%^&*()_+-=[]{};':"\|,.<>/?`. Validasi ini sebaiknya
+            diduplikasi di aplikasi agar user tidak menunggu round-trip.
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      description: 'Dari `forgotPasswordSchema` (`auth.dto.ts:46-53`).'
+      properties:
+        email: { type: string, format: email, maxLength: 255 }
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, password]
+      description: 'Dari `resetPasswordSchema` (`auth.dto.ts:55-68`).'
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: Token dari tautan reset yang dikirim ke email.
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: Aturan kompleksitas sama dengan `newPassword` pada ganti password.
+
+    MfaCodeRequest:
+      type: object
+      required: [code]
+      description: 'Dari `mfaCodeSchema` (`auth.dto.ts:18-20`).'
+      properties:
+        code: { type: string, minLength: 6, maxLength: 20 }
+
+    AuthUser:
+      type: object
+      required: [id, email, roles, permissions, companyScope, mustChangePassword]
+      description: |
+        Dari `AuthResponse['user']` (`auth.dto.ts`) dan `publicAuthUser`
+        (`backend/src/modules/auth/auth.service.ts:39-52`).
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        employeeId:
+          type: string
+          description: |
+            Id karyawan yang tertaut. **Boleh kosong** — akun admin tanpa data
+            karyawan tidak punya ini, dan semua route self-service
+            (`/attendance/me/*`, slip gaji PIN, dsb) akan menjawab
+            `400 BAD_REQUEST` untuk akun seperti itu.
+        name: { type: string }
+        roles:
+          type: array
+          items: { type: string }
+          description: 'Kode role, mis. `EMPLOYEE`, `MANAGER`, `HR_STAFF`, `SUPER_ADMIN`.'
+        permissions:
+          type: array
+          items: { type: string }
+          description: |
+            Kode permission `resource:action`. Pakai untuk menyembunyikan menu
+            yang pasti 403. Perhatikan `authorize()` juga menerima bentuk
+            wildcard `resource:*` dan alias legacy seperti `att:read`
+            (`backend/src/shared/middleware/Authorize.ts:42-50`), jadi
+            pencocokan di aplikasi sebaiknya longgar.
+        companyId:
+          type: string
+          description: Company aktif sesi ini.
+        companyScope:
+          type: array
+          items: { type: string }
+          description: |
+            Semua company yang boleh diakses akun ini. Mengirim `companyId`
+            di luar daftar ini dijawab `403 FORBIDDEN`.
+        groupId: { type: string }
+        mustChangePassword:
+          type: boolean
+          description: Bila `true`, arahkan user ke layar ganti password sebelum apa pun.
+
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, expiresIn]
+      description: |
+        Dari `TokenResponse` (`auth.dto.ts`) dan
+        `auth.controller.ts:101-105`.
+      properties:
+        accessToken:
+          type: string
+          description: 'Kirim pada header `Authorization: Bearer <...>`.'
+        refreshToken:
+          type: string
+          description: |
+            Simpan di penyimpanan aman OS (Keystore / Keychain), **bukan**
+            di preferences biasa. Dirotasi setiap refresh — selalu simpan
+            yang terbaru.
+        expiresIn:
+          type: integer
+          description: Masa hidup access token dalam detik.
+
+    MobileLoginData:
+      type: object
+      required: [user, tokens]
+      description: |
+        Bentuk `data` saat `X-Client-Type: mobile`
+        (`auth.controller.ts:96-111` untuk login, `167-182` untuk refresh).
+      properties:
+        user: { $ref: '#/components/schemas/AuthUser' }
+        tokens: { $ref: '#/components/schemas/TokenPair' }
+
+    WebLoginData:
+      type: object
+      required: [user, tokens, csrfToken]
+      description: |
+        Bentuk `data` untuk klien cookie (tanpa `X-Client-Type: mobile`)
+        — `auth.controller.ts:117-126`. Dicantumkan hanya agar jelas apa
+        yang **tidak** didapat klien mobile.
+      properties:
+        user: { $ref: '#/components/schemas/AuthUser' }
+        tokens:
+          type: object
+          required: [expiresIn]
+          properties:
+            expiresIn: { type: integer }
+        csrfToken: { type: string }
+
+    SessionProfile:
+      allOf:
+        - $ref: '#/components/schemas/AuthUser'
+        - type: object
+          description: 'Tambahan dari `auth.service.ts:576-580`.'
+          properties:
+            companyName:
+              type: string
+              description: Nama company karyawan; `undefined` bila tidak ada.
+            lastLoginAt:
+              type: [string, 'null']
+              format: date-time
+
+    # ===== Attendance =====
+    AttendanceMethod:
+      type: string
+      enum: [FINGERPRINT, MOBILE_GPS, MANUAL, FACE_RECOGNITION]
+      description: |
+        Dari `createAttendanceSchema.method`
+        (`backend/src/modules/attendance/attendance.dto.ts:18`). Nilai yang
+        boleh dipakai pada satu hari tertentu ada di
+        `GET /attendance/me/today` → `data.context.allowedMethods`.
+
+    DeviceGps:
+      type: object
+      description: |
+        Dari `deviceGpsSchema` (`attendance.dto.ts:3-10`). Semua field
+        opsional dan boleh `null`. Dipakai server untuk deteksi mock
+        location.
+      properties:
+        isMockLocation:
+          type: [boolean, 'null']
+          description: Hasil pemeriksaan mock-location dari OS.
+        mockProviderApp:
+          type: [string, 'null']
+          maxLength: 200
+        accuracyMeters:
+          type: [number, 'null']
+          minimum: 0
+        coordinateStaleHours:
+          type: [number, 'null']
+          minimum: 0
+        altitudeMeters:
+          type: [number, 'null']
+        bearingDegrees:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 360
+
+    LivenessMetadata:
+      type: object
+      description: |
+        Dari `createAttendanceSchema.liveness` (`attendance.dto.ts:47-59`).
+        Metadata transport saja — komentar di `attendance.dto.ts:41-42`
+        menegaskan nilai ini **tidak pernah otoritatif** untuk liveness atau
+        pencocokan wajah; keputusan dibuat server.
+      properties:
+        exifMake: { type: [string, 'null'], maxLength: 100 }
+        exifModel: { type: [string, 'null'], maxLength: 100 }
+        exifSoftware: { type: [string, 'null'], maxLength: 200 }
+        exifDateTimeOriginal: { type: [string, 'null'], maxLength: 30 }
+        pixelVariance: { type: [number, 'null'], minimum: 0 }
+        fileSizeBytes: { type: [integer, 'null'], minimum: 0 }
+        mimeType: { type: [string, 'null'], maxLength: 100 }
+        clientSource: { type: [string, 'null'], maxLength: 50 }
+        isLiveCapture: { type: [boolean, 'null'] }
+
+    FaceRecognitionPayload:
+      type: object
+      description: |
+        Dari `createAttendanceSchema.faceRecognition`
+        (`attendance.dto.ts:30-45`).
+
+        **Hanya `selfieImage` (dan metadata transport-nya) yang boleh dikirim
+        klien.** Komentar di `attendance.dto.ts:26-29` menjelaskan field lain
+        (vector, reference photo, URL storage, skor kemiripan) tetap ada di
+        DTO **semata-mata supaya service bisa menolaknya secara eksplisit**,
+        bukan karena boleh dipakai. Ekstraksi biometrik dilakukan server.
+      properties:
+        selfieImage:
+          type: string
+          maxLength: 7500000
+          description: |
+            Selfie hasil capture, format `data:image/jpeg;base64,...`.
+            Batas 7.500.000 karakter base64 ≈ 5 MB biner.
+        selfieMimeType: { type: string, maxLength: 100 }
+        selfieFileSizeBytes: { type: integer, minimum: 0 }
+        selfieUrl: { type: string, maxLength: 500 }
+        referencePhotoUrl: { type: string, maxLength: 500 }
+        referencePhotoImage: { type: string, maxLength: 7500000 }
+        similarityScore: { type: number, minimum: -1, maximum: 1 }
+        isFaceMatch: { type: boolean }
+        selfieVector:
+          type: array
+          items: { type: number }
+        referenceVector:
+          type: array
+          items: { type: number }
+
+    SelfCheckInRequest:
+      type: object
+      description: |
+        Dari `selfCheckInSchema` (`attendance.dto.ts:120-128`) — hasil
+        `createAttendanceSchema.pick(...)`. Tidak ada field yang `required`.
+        Waktu, tanggal, status, dan source diisi server.
+      properties:
+        method:
+          allOf: [{ $ref: '#/components/schemas/AttendanceMethod' }]
+          default: MANUAL
+          description: Default `MANUAL` bila tidak dikirim. Harus ada di `allowedMethods`.
+        notes: { type: string }
+        checkInLatitude: { type: number }
+        checkInLongitude: { type: number }
+        faceRecognition: { $ref: '#/components/schemas/FaceRecognitionPayload' }
+        liveness: { $ref: '#/components/schemas/LivenessMetadata' }
+        deviceGps: { $ref: '#/components/schemas/DeviceGps' }
+
+    SelfCheckOutRequest:
+      type: object
+      description: |
+        Dari `selfCheckOutSchema` (`attendance.dto.ts:130`) —
+        `checkoutAttendanceSchema` tanpa `checkOut`. Tidak ada field yang
+        `required`; waktu checkout diisi server.
+      properties:
+        method: { $ref: '#/components/schemas/AttendanceMethod' }
+        checkOutLatitude: { type: number }
+        checkOutLongitude: { type: number }
+        deviceGps: { $ref: '#/components/schemas/DeviceGps' }
+        notes: { type: string }
+
+    MyAttendanceToday:
+      type: object
+      required: [serverTime, serverDate, timezone, record, context, canCheckIn, canCheckOut]
+      description: 'Dari `attendance.service.ts:442-450`.'
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+          description: Waktu server saat request (ISO 8601). Pakai ini, bukan jam perangkat.
+        serverDate:
+          type: string
+          description: Tanggal kalender kantor, `YYYY-MM-DD`.
+        timezone:
+          type: string
+          description: 'Timezone kantor, mis. `Asia/Jakarta`.'
+        record:
+          description: |
+            Baris absensi hari ini, atau `null` bila belum check-in. Bentuk
+            baris tidak dipatok skema.
+        context:
+          $ref: '#/components/schemas/AttendanceContext'
+        canCheckIn:
+          type: boolean
+          description: '`true` bila belum ada record hari ini (`!record`).'
+        canCheckOut:
+          type: boolean
+          description: '`true` bila ada `checkIn` tapi belum ada `checkOut`.'
+
+    AttendanceContext:
+      type: object
+      required: [allowedMethods]
+      description: |
+        Dari `attendance.service.ts:496-500`. Objek ini adalah hasil
+        `attendanceContextService.resolve(...)` yang disebar (`...context`)
+        ditambah dua field di bawah, jadi field lainnya (policy, schedule,
+        warnings) ada tetapi tidak dipatok skema di sini.
+      properties:
+        allowedMethods:
+          type: array
+          items: { $ref: '#/components/schemas/AttendanceMethod' }
+          description: |
+            Metode absensi yang diizinkan untuk karyawan ini pada hari ini,
+            hasil kebijakan cabang disaring flag per-karyawan. Hanya tampilkan
+            tombol untuk metode yang ada di sini — mengirim metode lain
+            dijawab `400 BAD_REQUEST`.
+        policySnapshot:
+          type: object
+          additionalProperties: true
+          description: Rekaman kebijakan yang berlaku saat itu, untuk audit.
+      additionalProperties: true
+
+    OvertimeRequest:
+      type: object
+      required: [date, startTime, endTime, durationHours, reason]
+      description: |
+        Dari `overtimeRequestSchema` (`attendance.dto.ts:151-153`):
+        `createOvertimeSchema` tanpa `companyId`, dengan `employeeId`
+        menjadi opsional.
+      properties:
+        employeeId:
+          type: string
+          format: uuid
+          description: |
+            Hanya dihormati untuk user elevated; karyawan biasa dipaksa ke
+            identitas sesinya (`attendance.dto.ts:149-150`). Mobile karyawan
+            boleh mengosongkannya.
+        date: { type: string, format: date-time }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        durationHours:
+          type: number
+          exclusiveMinimum: 0
+        reason:
+          type: string
+          minLength: 1
+        multiplier:
+          type: number
+          default: 1.5
+          description: Default 1.5 bila tidak dikirim.
+
+    AttendanceCorrectionRequest:
+      type: object
+      required: [date, reason]
+      description: |
+        Dari `createAttendanceCorrectionSchema`
+        (`backend/src/modules/attendance/attendance-correction.dto.ts:3-12`).
+        Minimal satu dari `requestedCheckIn` / `requestedCheckOut` wajib ada,
+        divalidasi lewat `.refine()`.
+      properties:
+        attendanceId:
+          type: string
+          format: uuid
+          description: Record absensi yang dikoreksi. Boleh kosong bila belum ada record untuk tanggal itu.
+        date: { type: string, format: date-time }
+        requestedCheckIn: { type: string, format: date-time }
+        requestedCheckOut: { type: string, format: date-time }
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 2000
+          description: Di-trim sebelum divalidasi.
+
+    # ===== Leave =====
+    CreateLeaveRequest:
+      type: object
+      required: [employeeId, companyId, leaveTypeId, startDate, endDate, reason]
+      description: |
+        Dari `createLeaveRequestSchema`
+        (`backend/src/modules/leave/leave.dto.ts:14-22`).
+
+        `employeeId` dan `companyId` **wajib** karena validasi berjalan
+        sebelum controller/middleware yang menimpanya. Ambil keduanya dari
+        `GET /auth/me`.
+      properties:
+        employeeId:
+          type: string
+          format: uuid
+          description: Ditimpa server dengan `req.user.employeeId` (`leave.controller.ts:49`), tapi tetap wajib lolos validasi.
+        companyId:
+          type: string
+          format: uuid
+          description: Harus berada dalam `companyScope`; ditimpa dengan company efektif sesi.
+        leaveTypeId:
+          type: string
+          format: uuid
+          description: 'Dari `GET /leave/types`.'
+        startDate:
+          type: string
+          format: date-time
+          description: ISO 8601 lengkap (`z.string().datetime()`), bukan `YYYY-MM-DD`.
+        endDate:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          minLength: 1
+        attachment:
+          type: string
+          description: |
+            URL hasil `POST /leave/attachments`. Wajib untuk tipe cuti
+            tertentu atau pengajuan mendekati tanggal cuti — aturannya
+            ditegakkan di service, bukan skema.
+
+    LeaveAttachmentData:
+      type: object
+      required: [fileName, originalName, mimeType, size, url]
+      description: 'Dari `leave.controller.ts:62-70`.'
+      properties:
+        fileName:
+          type: string
+          description: Nama acak (UUID) di storage privat.
+        originalName: { type: string }
+        mimeType: { type: string }
+        size: { type: integer }
+        url:
+          type: string
+          description: |
+            URL absolut ke endpoint terotorisasi
+            `/private-files/leave-attachments/...`. Masih memerlukan sesi
+            aktif untuk diunduh — bukan URL publik.
+
+    # ===== Payroll =====
+    PayslipSummary:
+      type: object
+      required: [id, status, createdAt, locked]
+      description: |
+        Dari `payroll.repository.ts:470-482` (select) ditambah `locked`
+        (`payroll.controller.ts:384`). **Tidak ada nominal di sini.**
+      properties:
+        id:
+          type: string
+          description: 'Id payslip; belum tentu UUID (lihat parameter `PayslipIdPath`).'
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        locked:
+          type: boolean
+          const: true
+          description: Selalu `true` pada daftar ini. Nominal hanya tersedia lewat endpoint detail setelah unlock.
+        payrollRun:
+          $ref: '#/components/schemas/PayrollRunSummary'
+
+    PayrollRunSummary:
+      type: object
+      description: 'Dari `payslipRunSelect` (`payroll.repository.ts:15-18`).'
+      properties:
+        id: { type: string }
+        name: { type: string }
+        runNumber: { type: [string, integer] }
+        status:
+          type: string
+          description: Daftar self-service hanya memuat run `APPROVED` atau `DISBURSED`.
+        period:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+            code: { type: string }
+            frequency: { type: string }
+            startDate: { type: string, format: date-time }
+            endDate: { type: string, format: date-time }
+            payDate: { type: string, format: date-time }
+
+    SetPayslipPinRequest:
+      type: object
+      required: [currentPassword, pin]
+      description: 'Dari `setPayslipPinSchema` (`backend/src/modules/payroll/payroll.validation.ts:38-41`).'
+      properties:
+        currentPassword:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Password akun, sebagai reautentikasi.
+        pin:
+          type: string
+          pattern: '^\d{6}$'
+          description: Tepat 6 digit angka. Pesan Zod-nya "PIN harus terdiri dari 6 digit angka".
+
+    PayslipPinUnlockRequest:
+      type: object
+      required: [pin]
+      description: 'Dari `payslipPinUnlockSchema` (`payroll.validation.ts:43-45`).'
+      properties:
+        pin:
+          type: string
+          pattern: '^\d{6}$'
+
+    PayslipPinStatus:
+      type: object
+      required: [pinSet]
+      description: 'Dari `payslip-pin.service.ts:91-101`.'
+      properties:
+        pinSet:
+          type: boolean
+          description: '`true` bila `users.payslip_pin_hash` sudah terisi.'
+        lockedUntil:
+          type: string
+          format: date-time
+          description: |
+            **Hanya ada bila lock masih berjalan.** Tidak ada field ini
+            berarti tidak terkunci — jangan asumsikan `null`.
+
+    PayslipUnlockData:
+      type: object
+      required: [unlockToken, expiresAt]
+      description: 'Dari `payslip-pin.service.ts:137-142`.'
+      properties:
+        unlockToken:
+          type: string
+          description: |
+            Kirim pada header `X-Payslip-Unlock`. Simpan di memori saja,
+            jangan persist.
+        expiresAt:
+          type: string
+          format: date-time
+          description: 15 menit dari sekarang.
+
+    PayrollUnlockRequest:
+      type: object
+      required: [password]
+      description: 'Dari `payrollUnlockSchema` (`payroll.validation.ts:31-34`).'
+      properties:
+        password: { type: string, minLength: 1, maxLength: 128 }
+        totp:
+          type: string
+          minLength: 6
+          maxLength: 20
+          description: Wajib bila MFA akun aktif. Di-trim sebelum divalidasi.
+
+    PayrollUnlockData:
+      type: object
+      required: [unlockToken, tokenType, expiresAt, expiresIn]
+      description: 'Dari `backend/src/modules/payroll/payroll-unlock.service.ts:128-134`.'
+      properties:
+        unlockToken:
+          type: string
+          description: Kirim pada header `X-Payroll-Unlock-Token`.
+        tokenType:
+          type: string
+          const: PayrollUnlock
+        expiresAt: { type: string, format: date-time }
+        expiresIn:
+          type: integer
+          const: 300
+          description: '`PAYROLL_UNLOCK_TTL_SECONDS` = 5 menit.'
+
+    PayslipDetail:
+      type: object
+      description: |
+        Dari `payslip-pin.service.ts:164-207`. Baris payslip lengkap dari
+        Prisma (nominal ada di sini) ditambah `breakdown`. Field tidak
+        dipatok skema karena berasal langsung dari model Prisma.
+      properties:
+        id: { type: string }
+        status: { type: string }
+        baseSalary:
+          description: 'Decimal Prisma — diserialisasi sebagai string atau number tergantung driver. Parse dengan hati-hati.'
+        totalEarnings: {}
+        totalDeductions: {}
+        netPay: {}
+        employee:
+          type: object
+          properties:
+            id: { type: string }
+            fullName: { type: string }
+            employeeNumber: { type: string }
+        payrollRun:
+          $ref: '#/components/schemas/PayrollRunSummary'
+        components:
+          type: array
+          description: Komponen gaji dengan `salaryComponent { id, code, name, type }`.
+          items:
+            type: object
+            additionalProperties: true
+        breakdown:
+          type: object
+          additionalProperties: true
+          description: 'Hasil `buildPayslipBreakdown` (`backend/src/shared/payroll/payslip-breakdown.ts`).'
+      additionalProperties: true
+
+    # ===== Workflow =====
+    WorkflowActionRequest:
+      type: object
+      required: [action]
+      description: |
+        Dari `workflowActionSchema`
+        (`backend/src/modules/workflow-engine/workflow-engine.dto.ts:45-48`).
+        Skema yang sama dipakai oleh route `workflow-action` di modul
+        attendance, attendance-corrections, leave, work-calendar, dll.
+      properties:
+        action:
+          type: string
+          enum: [APPROVE, REJECT, ESCALATE]
+        comment:
+          type: string
+          maxLength: 2000
+
+    BulkApprovalRequest:
+      type: object
+      required: [instanceIds, action]
+      description: 'Dari `bulkApprovalSchema` (`workflow-engine.dto.ts:50-54`).'
+      properties:
+        instanceIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string, format: uuid }
+        action:
+          type: string
+          enum: [APPROVE, REJECT, ESCALATE]
+        comment:
+          type: string
+          maxLength: 2000
+
+    CreateDelegationRequest:
+      type: object
+      required: [delegateId, startDate, endDate]
+      description: 'Dari `createDelegationSchema` (`workflow-engine.dto.ts:68-73`).'
+      properties:
+        delegateId:
+          type: string
+          format: uuid
+          description: User yang menerima delegasi. Pendelegasi selalu pemanggil.
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time }
+        reason:
+          type: string
+          maxLength: 1000
+
+    # ===== Notification =====
+    RegisterDeviceRequest:
+      type: object
+      required: [installationId, platform, provider, token]
+      description: |
+        Dari `registerMobileDeviceSchema`
+        (`backend/src/modules/notification/mobile-device.dto.ts:3-13`).
+        Semua string di-trim sebelum divalidasi.
+      properties:
+        installationId:
+          type: string
+          minLength: 8
+          maxLength: 200
+          description: Id instalasi aplikasi yang stabil per perangkat.
+        platform:
+          type: string
+          enum: [ANDROID, IOS]
+        provider:
+          type: string
+          enum: [FCM, APNS]
+          description: '`APNS` hanya boleh dengan `platform: IOS`; kalau tidak, `422` pada field `provider`.'
+        token:
+          type: string
+          minLength: 20
+          maxLength: 4096
+          description: Token push dari FCM/APNS.
+        appVersion:
+          type: string
+          maxLength: 50
+        deviceModel:
+          type: string
+          maxLength: 100
+
+    CountData:
+      type: object
+      required: [count]
+      description: 'Bentuk `data` untuk endpoint `unread-count` (notification dan announcement).'
+      properties:
+        count: { type: integer, minimum: 0 }
+
+    # ===== Employee =====
+    EmployeeWithMaskablePii:
+      type: object
+      description: |
+        Baris karyawan dari Prisma; field selain PII tidak dipatok skema.
+        Enam field di bawah adalah daftar persis
+        `SENSITIVE_EMPLOYEE_FIELDS`
+        (`backend/src/modules/employee/employee-pii.ts:10-17`) yang di-mask
+        kecuali pemanggil berhak.
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        idNumber:
+          type: [string, 'null']
+          description: 'NIK. Ter-mask: `************0001` (panjang asli dipertahankan).'
+        taxId:
+          type: [string, 'null']
+          description: 'NPWP. Ter-mask dengan aturan yang sama.'
+        bankAccount:
+          type: [string, 'null']
+          description: Nomor rekening. Ter-mask.
+        bankAccountHolder:
+          type: [string, 'null']
+          description: |
+            Nama pemilik rekening — **juga ter-mask**, jadi nilai seperti
+            `*********anto` adalah hasil masking, bukan data rusak.
+        bpjsKetenagakerjaan:
+          type: [string, 'null']
+          description: Ter-mask.
+        bpjsKesehatan:
+          type: [string, 'null']
+          description: Ter-mask.
+      additionalProperties: true
+
+    # ===== Work calendar =====
+    CreateShiftSwapRequest:
+      type: object
+      required: [targetEmployeeId, shiftDate, reason]
+      description: |
+        Dari `createShiftSwapRequestSchema`
+        (`backend/src/modules/work-calendar/work-calendar.dto.ts:96-100`).
+      properties:
+        targetEmployeeId:
+          type: string
+          format: uuid
+          description: 'Rekan yang diajak bertukar; ambil dari `GET /work-calendars/shift-swaps/candidates/my`.'
+        shiftDate:
+          type: string
+          description: |
+            `z.string()` tanpa pola — format tidak dipatok skema di DTO ini.
+            Tidak dapat ditentukan dari source apakah server mengharapkan
+            `YYYY-MM-DD` atau ISO 8601 lengkap; konfirmasikan ke tim backend
+            atau coba di staging.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    ReviewShiftSwapRequest:
+      type: object
+      description: 'Dari `reviewShiftSwapRequestSchema` (`work-calendar.dto.ts:102-104`). Tidak ada field wajib.'
+      properties:
+        approvalNotes:
+          type: string
+          maxLength: 1000
+
+    # ===== Permission request / loan / EWA / daily activity =====
+    CreatePermissionRequest:
+      type: object
+      required: [type, startDate, endDate, duration, reason]
+      description: |
+        Dari `createPermissionSchema`
+        (`backend/src/modules/permission-request/permission-request.dto.ts:3-14`).
+      properties:
+        type:
+          type: string
+          enum: [SICK, PERSONAL, LATE, EARLY_LEAVE, LEAVE_OFFICE, BUSINESS_TRIP, WORK_FROM_HOME, OTHER]
+        startDate:
+          type: string
+          description: '`z.string()` tanpa pola — format tidak dipatok skema.'
+        endDate:
+          type: string
+          description: '`z.string()` tanpa pola.'
+        duration:
+          type: number
+          exclusiveMinimum: 0
+          description: Satuan tidak dinyatakan di DTO (jam atau hari); tidak dapat ditentukan dari skema.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        attachment:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: |
+            Opsional di skema, **wajib menurut kebijakan bisnis** — service
+            menolak tanpa lampiran dengan `400 BAD_REQUEST` berbahasa
+            Indonesia (`permission-request.dto.ts:11-13`).
+
+    CreateLoanRequest:
+      type: object
+      required: [loanTypeId, amount, totalInstallments, installmentAmount, reason]
+      description: |
+        Dari `createLoanSchema`
+        (`backend/src/modules/employee-loan/employee-loan.dto.ts:3-9`).
+      properties:
+        loanTypeId:
+          type: string
+          format: uuid
+          description: 'Dari `GET /employee-loans/types`.'
+        amount:
+          type: number
+          exclusiveMinimum: 0
+        totalInstallments:
+          type: integer
+          minimum: 1
+          maximum: 60
+        installmentAmount:
+          type: number
+          exclusiveMinimum: 0
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    CreateEwaRequest:
+      type: object
+      required: [amountRequested]
+      description: |
+        Dari `createEWARequestSchema`
+        (`backend/src/modules/ewa/ewa.dto.ts`). Nilai uang menerima number
+        **atau** string numerik, dengan maksimum 2 angka desimal.
+      properties:
+        amountRequested:
+          type: [number, string]
+          description: |
+            Harus > 0, maksimum 9.999.999.999.999,99 dan paling banyak dua
+            angka desimal. String numerik diterima dan di-coerce.
+        adminFee:
+          type: [number, string]
+          description: Boleh 0. Aturan desimal sama.
+        employeeId:
+          type: string
+          format: uuid
+          description: Opsional; untuk pengajuan atas nama orang lain oleh user yang berhak.
+        payrollPeriodId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 4000
+          description: Di-trim. Pesan Zod bila terlalu pendek "Alasan minimal 3 karakter".
+
+    CreateDailyActivityRequest:
+      type: object
+      required: [branchId, activityDate, title, latitude, longitude, startTime, endTime]
+      description: |
+        Dari `createDailyActivitySchema`
+        (`backend/src/modules/daily-activity/daily-activity.dto.ts:13-30`).
+        Field tanggal/waktu memakai `z.coerce.date()`, jadi string ISO 8601
+        diterima dan dikonversi.
+      properties:
+        employeeId:
+          type: string
+          minLength: 1
+          description: Opsional; untuk pelaporan atas nama orang lain.
+        branchId:
+          type: string
+          minLength: 1
+          description: 'Lokasi site/branch. Pesan Zod: "Lokasi site / branch wajib dipilih".'
+        activityDate:
+          type: string
+          format: date-time
+        activityType:
+          type: string
+          enum: [WORK, SITE_VISIT, SITE_INSPECTION, MEETING, OTHER]
+          default: WORK
+        title:
+          type: string
+          minLength: 3
+        description: { type: string }
+        photoUrl: { type: string }
+        latitude:
+          type: number
+          description: Wajib. Di-coerce dari string.
+        longitude:
+          type: number
+          description: Wajib.
+        geoAccuracyMeters:
+          type: number
+          minimum: 0
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        notes: { type: string }
+
+    CompleteDailyActivityRequest:
+      type: object
+      description: 'Dari `completeDailyActivitySchema` (`daily-activity.dto.ts:40-43`). Tidak ada field wajib.'
+      properties:
+        actualEndTime: { type: string, format: date-time }
+        notes: { type: string }
+
+    # ===== Meta =====
+    MetaEndpointsResponse:
+      type: object
+      required: [success, data]
+      description: |
+        Dari `backend/src/app.ts:257`. **Bukan** envelope `Result` — tidak ada
+        `message`.
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          required: [count, endpoints]
+          properties:
+            count: { type: integer }
+            endpoints:
+              type: array
+              items:
+                type: object
+                required: [path, methods, middlewares]
+                properties:
+                  path: { type: string }
+                  methods:
+                    type: array
+                    items: { type: string }
+                  middlewares:
+                    type: array
+                    items: { type: string }

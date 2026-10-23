@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hrm_app/core/config/demo_mode.dart';
 import 'package:hrm_app/features/dashboard/presentation/widgets/leave_balance_ring.dart';
+import 'package:hrm_app/features/dashboard/presentation/widgets/home_support_sections.dart';
 
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_components.dart';
@@ -79,7 +79,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final dashboard = ref.watch(dashboardControllerProvider);
-    final demoSections = ref.watch(demoHomeSectionsBuilderProvider);
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () async {
@@ -93,6 +92,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               toolbarHeight: 68,
               titleSpacing: AppSpacing.screenHorizontal,
               title: Row(
+                key: const ValueKey('home-header'),
                 children: [
                   AppInitialAvatar(name: dashboard.employee.name, size: 42),
                   const SizedBox(width: 11),
@@ -157,57 +157,65 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     style: Theme.of(context).textTheme.headlineLarge,
                   ),
                   const SizedBox(height: 18),
-                  _AttendanceSummary(
-                    state: widget.attendance,
-                    onOpen: widget.onOpenAttendance,
+                  KeyedSubtree(
+                    key: const ValueKey('home-attendance-summary'),
+                    child: _AttendanceSummary(
+                      state: widget.attendance,
+                      onOpen: widget.onOpenAttendance,
+                    ),
                   ),
                   if (widget.onOpenRequests != null ||
                       widget.onOpenCalendar != null) ...[
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        if (widget.onOpenRequests != null)
-                          Expanded(
-                            child: _ShortcutCard(
-                              label: widget.requestShortcutLabel,
-                              icon: widget.requestShortcutLabel == 'Approval'
-                                  ? Icons.fact_check_outlined
-                                  : Icons.description_outlined,
-                              onTap: widget.onOpenRequests!,
+                    KeyedSubtree(
+                      key: const ValueKey('home-shortcuts'),
+                      child: Row(
+                        children: [
+                          if (widget.onOpenRequests != null)
+                            Expanded(
+                              child: _ShortcutCard(
+                                label: widget.requestShortcutLabel,
+                                icon: widget.requestShortcutLabel == 'Approval'
+                                    ? Icons.fact_check_outlined
+                                    : Icons.description_outlined,
+                                onTap: widget.onOpenRequests!,
+                              ),
                             ),
-                          ),
-                        if (widget.onOpenRequests != null &&
-                            widget.onOpenCalendar != null)
-                          const SizedBox(width: 10),
-                        if (widget.onOpenCalendar != null)
-                          Expanded(
-                            child: _ShortcutCard(
-                              label: 'Kalender',
-                              icon: Icons.calendar_month_outlined,
-                              onTap: widget.onOpenCalendar!,
+                          if (widget.onOpenRequests != null &&
+                              widget.onOpenCalendar != null)
+                            const SizedBox(width: 10),
+                          if (widget.onOpenCalendar != null)
+                            Expanded(
+                              child: _ShortcutCard(
+                                label: 'Kalender',
+                                icon: Icons.calendar_month_outlined,
+                                onTap: widget.onOpenCalendar!,
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
-                  if (dashboard.announcementsAvailable ||
-                      dashboard.announcementsError != null) ...[
-                    const SizedBox(height: 12),
-                    _Announcements(
+                  const SizedBox(height: 12),
+                  KeyedSubtree(
+                    key: const ValueKey('home-announcements'),
+                    child: _Announcements(
                       dashboard: dashboard,
                       onRetry: ref
                           .read(dashboardControllerProvider.notifier)
                           .refresh,
                     ),
-                  ],
-                  if (demoSections != null) ...[
-                    const SizedBox(height: 12),
-                    demoSections(context),
-                  ],
-                  if (dashboard.leaveBalancesAvailable ||
-                      dashboard.leaveBalancesError != null) ...[
-                    const SizedBox(height: 12),
-                    _LeaveBalanceCard(
+                  ),
+                  const SizedBox(height: 12),
+                  HomeSupportSections(
+                    team: dashboard.teamSummary,
+                    shift: dashboard.nextShift,
+                    attendancePattern: dashboard.attendancePattern,
+                  ),
+                  const SizedBox(height: 12),
+                  KeyedSubtree(
+                    key: const ValueKey('home-leave-balance'),
+                    child: _LeaveBalanceCard(
                       dashboard: dashboard,
                       selected: _selectedBalance,
                       onSelected: (value) =>
@@ -217,7 +225,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           .refresh,
                       onApply: widget.onOpenRequests,
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
@@ -388,6 +396,13 @@ class _Announcements extends StatelessWidget {
         onAction: onRetry,
       );
     }
+    if (!dashboard.announcementsAvailable) {
+      return const _UnavailableHomeCard(
+        icon: Icons.campaign_outlined,
+        title: 'Pengumuman belum tersedia',
+        message: 'Endpoint pengumuman belum tersedia untuk akun ini.',
+      );
+    }
     if (dashboard.announcements.isEmpty) {
       return const AppStateView(
         kind: AppViewStateKind.empty,
@@ -469,6 +484,13 @@ class _LeaveBalanceCard extends StatelessWidget {
         message: dashboard.leaveBalancesError!,
         actionLabel: 'Coba lagi',
         onAction: onRetry,
+      );
+    }
+    if (!dashboard.leaveBalancesAvailable) {
+      return const _UnavailableHomeCard(
+        icon: Icons.beach_access_outlined,
+        title: 'Saldo cuti belum tersedia',
+        message: 'Saldo cuti belum dikembalikan oleh server.',
       );
     }
     if (dashboard.leaveBalances.isEmpty) {
@@ -574,10 +596,72 @@ class _LeaveBalanceCard extends StatelessWidget {
             '$remaining dari ${active.total} hari tersisa${active.note == null ? '' : ' · ${active.note}'}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          if (active.carryOverDays > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              _carryOverNote(active),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+String _carryOverNote(LeaveBalance balance) {
+  final days = balance.carryOverDays;
+  final count = days == days.truncateToDouble() ? '${days.toInt()}' : '$days';
+  final expiry = balance.carryOverExpiredAt;
+  if (expiry == null) return 'Cuti bawaan: $count hari';
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'Mei',
+    'Jun',
+    'Jul',
+    'Agu',
+    'Sep',
+    'Okt',
+    'Nov',
+    'Des',
+  ];
+  return 'Cuti bawaan: $count hari · Batas berlaku ${expiry.day} ${months[expiry.month - 1]} ${expiry.year}';
+}
+
+class _UnavailableHomeCard extends StatelessWidget {
+  const _UnavailableHomeCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => AppSurfaceCard(
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppIconTile(icon: icon),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 3),
+              Text(message, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _BalanceRow extends StatelessWidget {

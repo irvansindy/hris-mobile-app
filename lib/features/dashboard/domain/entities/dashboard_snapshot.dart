@@ -12,6 +12,9 @@ class DashboardSnapshot {
     this.leaveBalancesError,
     this.announcementsError,
     this.unreadNotifications = 0,
+    this.teamSummary = const DashboardTeamSummary(),
+    this.nextShift = const DashboardShiftSummary(),
+    this.attendancePattern = const DashboardAttendancePattern(),
   });
 
   final DashboardEmployee employee;
@@ -26,6 +29,81 @@ class DashboardSnapshot {
   final String? leaveBalancesError;
   final String? announcementsError;
   final int unreadNotifications;
+  final DashboardTeamSummary teamSummary;
+  final DashboardShiftSummary nextShift;
+  final DashboardAttendancePattern attendancePattern;
+}
+
+class DashboardTeamMember {
+  const DashboardTeamMember({
+    required this.initials,
+    required this.label,
+    required this.detail,
+  });
+
+  final String initials;
+  final String label;
+  final String detail;
+}
+
+class DashboardTeamSummary {
+  const DashboardTeamSummary({
+    this.available = false,
+    this.presentCount = 0,
+    this.leaveCount = 0,
+    this.division,
+    this.members = const [],
+  });
+
+  final bool available;
+  final int presentCount;
+  final int leaveCount;
+  final String? division;
+  final List<DashboardTeamMember> members;
+}
+
+class DashboardShiftSummary {
+  const DashboardShiftSummary({
+    this.available = false,
+    this.dayLabel,
+    this.timeRange,
+    this.location,
+    this.typeLabel,
+  });
+
+  final bool available;
+  final String? dayLabel;
+  final String? timeRange;
+  final String? location;
+  final String? typeLabel;
+}
+
+class DashboardAttendancePatternRow {
+  const DashboardAttendancePatternRow({
+    required this.label,
+    required this.levels,
+  });
+
+  final String label;
+  final List<int> levels;
+}
+
+class DashboardAttendancePattern {
+  const DashboardAttendancePattern({
+    this.available = false,
+    this.periodDays = 90,
+    this.rows = const [],
+    this.onsitePercent = 0,
+    this.remotePercent = 0,
+    this.leavePercent = 0,
+  });
+
+  final bool available;
+  final int periodDays;
+  final List<DashboardAttendancePatternRow> rows;
+  final int onsitePercent;
+  final int remotePercent;
+  final int leavePercent;
 }
 
 class DashboardAttendance {
@@ -76,6 +154,8 @@ class LeaveBalance {
     required this.colorIndex,
     this.shortLabel,
     this.note,
+    this.carryOverDays = 0,
+    this.carryOverExpiredAt,
   });
 
   final String type;
@@ -84,6 +164,8 @@ class LeaveBalance {
   final int colorIndex;
   final String? shortLabel;
   final String? note;
+  final num carryOverDays;
+  final DateTime? carryOverExpiredAt;
 }
 
 class Announcement {

@@ -30,6 +30,8 @@ import 'package:hrm_app/features/notifications/notification_providers.dart';
 import 'package:hrm_app/features/profile/data/datasources/profile_local_datasource.dart';
 import 'package:hrm_app/features/profile/data/repositories/profile_repository_impl.dart';
 import 'package:hrm_app/features/profile/profile_dependencies.dart';
+import 'package:hrm_app/features/profile/domain/entities/employee_support.dart';
+import 'package:hrm_app/features/profile/domain/repositories/employee_support_repository.dart';
 import 'package:hrm_app/features/self_service/domain/entities/employee_request.dart';
 import 'package:hrm_app/features/self_service/domain/entities/request_command.dart';
 import 'package:hrm_app/features/self_service/domain/repositories/request_repository.dart';
@@ -73,6 +75,9 @@ Future<ProviderContainer> createRedesignFlowFixture({
           () => session.context,
         );
       }),
+      employeeSupportRepositoryProvider.overrideWithValue(
+        const _EmployeeSupport(),
+      ),
       attendanceRepositoryProvider.overrideWith(
         (ref) => FixtureAttendance(
           ref.watch(featureSessionProvider).context,
@@ -92,6 +97,20 @@ Future<ProviderContainer> createRedesignFlowFixture({
         return _Notifications();
       }),
     ],
+  );
+}
+
+class _EmployeeSupport implements EmployeeSupportRepository {
+  const _EmployeeSupport();
+
+  @override
+  Future<EmployeeSupportSnapshot> load() async => const EmployeeSupportSnapshot(
+    reportingLine: ReportingLine(
+      source: 'POSITION_REPORTS_TO',
+      alternateSupervisors: [],
+    ),
+    attachments: [],
+    canReadAttachments: true,
   );
 }
 
@@ -225,7 +244,7 @@ class _Requests extends RequestRepository {
   }
 }
 
-class _Calendar implements CalendarRepository {
+class _Calendar extends CalendarRepository {
   @override
   CalendarData get current => CalendarData(
     focusedDate: DateTime.now(),
@@ -245,14 +264,20 @@ class _Notifications implements NotificationRepository {
 
   bool _read = false;
   @override
-  Future<List<NotificationItem>> load({required int limit}) async => [
-    NotificationItem(
-      id: 'fixture-notification',
-      title: 'Fixture informasi',
-      message: 'Fixture, bukan informasi server.',
-      isRead: _read,
-    ),
-  ];
+  Future<NotificationPage> load({int page = 1, int limit = 50}) async =>
+      NotificationPage(
+        page: page,
+        totalPages: 1,
+        total: 1,
+        items: [
+          NotificationItem(
+            id: 'fixture-notification',
+            title: 'Fixture informasi',
+            message: 'Fixture, bukan informasi server.',
+            isRead: _read,
+          ),
+        ],
+      );
   @override
   Future<int> unreadCount() async => _read ? 0 : 1;
   @override

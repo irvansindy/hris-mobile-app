@@ -23,6 +23,7 @@ void main() {
     );
     expect(workflow, contains('flutter analyze'));
     expect(workflow, contains('flutter test --coverage'));
+    expect(workflow, contains('test/core/platform_backup_policy_test.dart'));
     expect(workflow, contains('path: test/failures'));
     expect(workflow, isNot(contains('--update-goldens')));
   });
@@ -30,7 +31,7 @@ void main() {
   test('CI pins Flutter and builds a guarded production artifact', () {
     expect(
       workflow,
-      contains('FLUTTER_VERSION: 2553f89be1efa62eeb7b3aeea68fc9f80336ee54'),
+      contains('FLUTTER_VERSION: 19946f91c8d9de18a4674460d015229cc0b2534f'),
     );
     expect(workflow, contains('flutter build appbundle --release'));
     expect(
@@ -47,6 +48,50 @@ void main() {
       workflow,
       contains('build/app/outputs/bundle/release/app-release.aab'),
     );
+  });
+
+  test('Android CI runs the credential-free device integration flow', () {
+    final jobs = (loadYaml(workflow) as YamlMap)['jobs'] as YamlMap;
+    final steps = (jobs['android'] as YamlMap)['steps'] as YamlList;
+    final integration = steps.cast<YamlMap>().singleWhere(
+      (step) => step['name'] == 'Run Android fixture integration tests',
+    );
+    expect(integration['uses'], 'reactivecircus/android-emulator-runner@v2');
+    final settings = integration['with'] as YamlMap;
+    expect(settings['api-level'], 35);
+    expect(settings['arch'], 'x86_64');
+    expect(
+      settings['script'],
+      contains('integration_test/redesign_flow_test.dart'),
+    );
+    expect(settings['script'], contains('-d emulator-5554'));
+    expect(settings['script'], isNot(contains('.env')));
+    expect(settings['script'], isNot(contains('hris-mobile-smoke.json')));
+  });
+
+  test('Android upload requires the post-build PDFium integrity gate', () {
+    final jobs = (loadYaml(workflow) as YamlMap)['jobs'] as YamlMap;
+    final steps = ((jobs['android'] as YamlMap)['steps'] as YamlList)
+        .cast<YamlMap>()
+        .toList();
+    final guard = steps.indexWhere(
+      (step) => step['name'] == 'Verify native PDFium integrity',
+    );
+    final build = steps.indexWhere(
+      (step) => step['name'] == 'Build release App Bundle',
+    );
+    final upload = steps.indexWhere(
+      (step) => step['name'] == 'Upload Android artifact',
+    );
+    expect(guard, greaterThan(build));
+    expect(upload, greaterThan(guard));
+    expect(
+      steps[guard]['run'],
+      'dart --packages=.dart_tool/package_config.json tool/verify_native_pdfium.dart',
+    );
+    expect(steps[guard]['continue-on-error'], isNot(true));
+    expect(steps[guard]['if'], isNull);
+    expect(steps[upload]['if'], isNull);
   });
 
   test(

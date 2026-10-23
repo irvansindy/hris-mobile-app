@@ -116,19 +116,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Layanan Employee'), findsNothing);
     expect(find.text('Sebelumnya'), findsNothing);
-    expect(find.textContaining('Cuti Tahunan'), findsOneWidget);
-    expect(find.text('Lembur 3 jam'), findsOneWidget);
-    expect(find.text('Reimbursement'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('request-filter-Lembur')));
+    expect(find.text('Cuti tahunan demo · 2 hari'), findsOneWidget);
+    expect(find.text('Izin · 1 hari'), findsOneWidget);
+    expect(find.text('Lembur 3 jam'), findsNothing);
+    expect(find.text('Reimbursement'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('request-filter-Cuti')));
     await tester.pumpAndSettle();
-    expect(find.text('Lembur 3 jam'), findsOneWidget);
-    expect(find.textContaining('Cuti Tahunan'), findsNothing);
-    await tester.tap(find.text('Lembur 3 jam'));
+    expect(find.text('Cuti tahunan demo · 2 hari'), findsOneWidget);
+    expect(find.text('Izin · 1 hari'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('request-filter-Semua')));
     await tester.pumpAndSettle();
-    expect(
-      find.textContaining('belum tersimpan sebagai transaksi lokal'),
-      findsOneWidget,
-    );
+    await tester.tap(find.text('Izin · 1 hari'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 hari kerja'), findsOneWidget);
+    expect(find.textContaining('server'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

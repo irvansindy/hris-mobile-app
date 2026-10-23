@@ -11,8 +11,15 @@ import 'package:hrm_app/features/notifications/domain/entities/notification_item
 import 'package:hrm_app/features/notifications/notification_providers.dart';
 
 class NotificationsScreen extends ConsumerStatefulWidget {
-  const NotificationsScreen({super.key, this.onOpenResource});
+  const NotificationsScreen({
+    super.key,
+    this.onOpenResource,
+    this.pushStatusPanel,
+    this.onBack,
+  });
   final ValueChanged<NotificationItem>? onOpenResource;
+  final Widget? pushStatusPanel;
+  final VoidCallback? onBack;
   @override
   ConsumerState<NotificationsScreen> createState() =>
       _NotificationsScreenState();
@@ -58,6 +65,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
               Row(
+                key: const ValueKey('notifications-header'),
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   IconButton(
@@ -68,7 +76,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                       ),
                     ),
                     tooltip: 'Kembali',
-                    onPressed: () => Navigator.of(context).maybePop(),
+                    onPressed:
+                        widget.onBack ?? () => Navigator.of(context).maybePop(),
                     icon: const Icon(Icons.chevron_left_rounded),
                   ),
                   const SizedBox(width: 8),
@@ -84,7 +93,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               if (stackedHeader)
                 Align(alignment: Alignment.centerRight, child: readAllButton),
               const SizedBox(height: 16),
+              if (widget.pushStatusPanel != null) widget.pushStatusPanel!,
               Wrap(
+                key: const ValueKey('notifications-filters'),
                 spacing: 8,
                 runSpacing: 8,
                 children: [
@@ -111,6 +122,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 ],
               ),
               const SizedBox(height: 16),
+              const SizedBox(key: ValueKey('notifications-content'), height: 0),
               if (inbox.isLoading)
                 const AppStateView.loading(
                   title: 'Memuat notifikasi',

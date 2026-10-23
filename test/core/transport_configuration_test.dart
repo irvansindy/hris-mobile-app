@@ -60,6 +60,7 @@ void main() {
         'CONNECT_TIMEOUT_MS',
         'RECEIVE_TIMEOUT_MS',
         'ENABLE_LOGGING',
+        'PUSH_MODE',
       }),
     );
     expect(

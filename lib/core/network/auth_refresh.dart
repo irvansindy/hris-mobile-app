@@ -5,6 +5,7 @@ import 'package:hrm_app/core/security/cookie_session.dart';
 import 'package:hrm_app/core/security/session_cookie_store.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/core/security/token_storage.dart';
+import 'package:uuid/uuid.dart';
 
 class AuthRefreshCoordinator {
   AuthRefreshCoordinator({
@@ -12,12 +13,17 @@ class AuthRefreshCoordinator {
     required this.lifecycle,
     required this.config,
     required this.cookieStore,
+    this.onSessionUpdated,
+    this.onPasswordChangeRequired,
   });
 
   final TokenStorage storage;
   final SessionLifecycle lifecycle;
   final AppConfig config;
   final SessionCookieStore cookieStore;
+  final void Function(Map<String, dynamic> session)? onSessionUpdated;
+  final void Function()? onPasswordChangeRequired;
+  int? _passwordChangeRevision;
   Future<DioException?>? _refreshing;
   int? _revision;
   int _credentialRevision = 0;
@@ -26,6 +32,27 @@ class AuthRefreshCoordinator {
 
   Future<Map<String, String>> readHeaders(Uri uri, {required String method}) =>
       cookieStore.headersFor(uri, method: method);
+
+  Future<void> requirePasswordChange(
+    int revision,
+    bool Function() isCurrent,
+  ) async {
+    if (!lifecycle.isCurrent(revision) || !isCurrent()) return;
+    _passwordChangeRevision = revision;
+    onPasswordChangeRequired?.call();
+    try {
+      await lifecycle.protect(revision, () async {
+        if (!isCurrent()) return;
+        final stored = await storage.readSession();
+        if (stored == null || !isCurrent()) return;
+        final updated = {...stored, 'mustChangePassword': true};
+        await storage.saveSession(updated);
+        if (isCurrent()) onSessionUpdated?.call(Map.unmodifiable(updated));
+      });
+    } on Object {
+      // Keep the in-memory gate even when platform storage is unavailable.
+    }
+  }
 
   Future<DioException?> refresh(int revision, RequestOptions failedRequest) {
     final active = _refreshing;
@@ -128,6 +155,8 @@ class AuthRefreshCoordinator {
         options: Options(
           headers: {
             if (!usesBrowserCookieStore) 'X-Client-Type': 'mobile',
+            'X-Correlation-Id': const Uuid().v4(),
+            'X-Request-Id': const Uuid().v4(),
             if (usesBrowserCookieStore) 'Cookie': ?cookie,
             if (usesBrowserCookieStore)
               'X-CSRF-Token': ?snapshot.refreshHeaders['X-CSRF-Token'],
@@ -158,6 +187,7 @@ class AuthRefreshCoordinator {
           _nonEmptyString(data['csrfToken']) ??
           snapshot.refreshHeaders['X-CSRF-Token'];
       final cookieAuth = usesBrowserCookieStore;
+      final refreshedUser = _stringMap(data['user']);
       if ((!usesBrowserCookieStore &&
               (access == null || issuedRefresh == null)) ||
           (access == null && !cookieAuth) ||
@@ -169,9 +199,11 @@ class AuthRefreshCoordinator {
                   issuedCsrfCookie == null)) ||
           (!cookieStore.usesBrowserCookies &&
               cookieAuth &&
-              (csrf == null || csrf.isEmpty))) {
+              (csrf == null || csrf.isEmpty)) ||
+          (!cookieAuth && !_validRefreshedUser(refreshedUser))) {
         throw _invalidResponse(response);
       }
+      Map<String, dynamic>? updatedSession;
       await lifecycle.protect(revision, () async {
         if (!cookieStore.usesBrowserCookies && cookieAuth) {
           final accepted = await cookieStore.capture(
@@ -184,22 +216,45 @@ class AuthRefreshCoordinator {
             throw _invalidResponse(response);
           }
         }
-        if (access != null) {
-          await storage.saveTokens(accessToken: access, refreshToken: refresh);
-        }
         final session = await storage.readSession();
         if (session != null) {
-          await storage.saveSession({
+          final previousUserId = _nonEmptyString(
+            session['id'] ?? session['userId'],
+          );
+          final nextUserId = _nonEmptyString(
+            refreshedUser?['id'] ?? refreshedUser?['userId'],
+          );
+          if (!cookieAuth &&
+              (previousUserId == null || previousUserId != nextUserId)) {
+            throw _invalidResponse(response);
+          }
+          updatedSession = {
             ...session,
+            ...?refreshedUser,
+            if (_passwordChangeRevision == revision ||
+                session['mustChangePassword'] == true)
+              'mustChangePassword': true,
             'accessToken': ?access,
             'refreshToken': ?refresh,
             if (cookieAuth) 'usesCookieAuth': true,
             if (rawTokens['expiresIn'] is int)
               'expiresIn': rawTokens['expiresIn'],
-          });
+          };
+        } else if (!cookieAuth) {
+          throw _invalidResponse(response);
+        }
+        if (access != null) {
+          await storage.saveTokens(accessToken: access, refreshToken: refresh);
+        }
+        if (updatedSession case final nextSession?) {
+          await storage.saveSession(nextSession);
         }
         _credentialRevision++;
       });
+      if (!lifecycle.isCurrent(revision)) return;
+      if (updatedSession case final nextSession?) {
+        onSessionUpdated?.call(Map.unmodifiable(nextSession));
+      }
     } finally {
       refreshDio.close(force: true);
     }
@@ -211,6 +266,17 @@ class AuthRefreshCoordinator {
 
   String? _nonEmptyString(Object? value) =>
       value is String && value.trim().isNotEmpty ? value : null;
+
+  Map<String, dynamic>? _stringMap(Object? value) {
+    if (value is! Map) return null;
+    return value.map((key, item) => MapEntry(key.toString(), item));
+  }
+
+  bool _validRefreshedUser(Map<String, dynamic>? user) =>
+      _nonEmptyString(user?['id'] ?? user?['userId']) != null &&
+      user?['roles'] is List &&
+      user?['permissions'] is List &&
+      user?['companyScope'] is List;
 
   DioException _invalidResponse(Response<dynamic> response) => DioException(
     requestOptions: response.requestOptions,

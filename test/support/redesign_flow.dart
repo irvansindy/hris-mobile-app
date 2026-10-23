@@ -53,6 +53,11 @@ void registerRedesignFlowTests() {
         await tester.drag(find.byType(ListView).first, const Offset(0, 1200));
         await tester.pumpAndSettle();
         if (reject) {
+          await tester.scrollUntilVisible(
+            find.text('Fixture penolakan server'),
+            180,
+            scrollable: find.byType(Scrollable).first,
+          );
           expect(find.text('Fixture penolakan server'), findsOneWidget);
           expect(find.text('Sedang bekerja'), findsNothing);
         } else {
@@ -96,8 +101,21 @@ void registerRedesignFlowTests() {
         await tester.pumpAndSettle();
         await _tap(tester, find.text('Tinjau dan kirim'));
         await _tap(tester, find.text('Kirim'));
+        await _tap(tester, _navLabel('Beranda'));
         await _tap(tester, find.text('Pengajuan'));
         expect(find.text('Fixture cuti tahunan'), findsOneWidget);
+        expect(find.byType(AppFloatingNavigation), findsOneWidget);
+        expect(find.byType(AppQuickActionFab), findsNothing);
+        await _tap(tester, find.text('Buat Pengajuan'));
+        expect(find.text('Pilih jenis pengajuan'), findsOneWidget);
+        expect(_navLabel('Profil').hitTestable(), findsNothing);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        await _tap(tester, find.text('Fixture cuti tahunan'));
+        expect(find.byType(AppFloatingNavigation), findsNothing);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.byType(AppFloatingNavigation), findsOneWidget);
         await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
         await _tap(tester, _navLabel('Profil'));
@@ -129,8 +147,17 @@ Finder _navLabel(String label) => find.descendant(
 );
 
 Future<void> _tap(WidgetTester tester, Finder finder) async {
+  if (finder.evaluate().isEmpty &&
+      find.byType(Scrollable).evaluate().isNotEmpty) {
+    await tester.scrollUntilVisible(
+      finder,
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
+  }
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
+  finder.reset();
   await tester.tap(finder);
   await tester.pumpAndSettle();
 }
@@ -141,7 +168,11 @@ Future<void> _login(WidgetTester tester, String email) async {
     find.byKey(const ValueKey('login-password')),
     'FixturePassword1!',
   );
-  await _tap(tester, find.byKey(const ValueKey('login-submit')));
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pumpAndSettle();
+  final submit = find.byKey(const ValueKey('login-submit'));
+  await tester.ensureVisible(submit);
+  await tester.tap(find.byKey(const ValueKey('login-submit')));
   await tester.pump(const Duration(milliseconds: 1500));
   await tester.pumpAndSettle();
 }

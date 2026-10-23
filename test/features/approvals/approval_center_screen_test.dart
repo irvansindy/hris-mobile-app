@@ -208,6 +208,10 @@ WorkflowApproval _item(String id) => WorkflowApproval(
 );
 
 class _ApprovalRepo implements ApprovalRepository {
+  @override
+  Future<WorkflowApprovalDetail> getDetail(String instanceId) =>
+      throw UnimplementedError();
+
   WorkflowApprovalPage queue = _page(const []);
   Completer<WorkflowApprovalPage>? queueGate;
   Completer<void>? actionGate;
@@ -233,6 +237,7 @@ class _ApprovalRepo implements ApprovalRepository {
     required String instanceId,
     required WorkflowApprovalAction action,
     String? comment,
+    String? subjectEmployeeId,
   }) {
     this.action = action;
     actionComment = comment;

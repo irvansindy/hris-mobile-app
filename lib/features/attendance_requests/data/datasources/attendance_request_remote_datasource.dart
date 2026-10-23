@@ -89,9 +89,9 @@ class DioAttendanceRequestRemoteDataSource
       }
     }
     if (command.requestedCheckOut case final checkOut?) {
-      if (!_sameDate(command.date, checkOut)) {
+      if (!_sameOrNextDate(command.date, checkOut)) {
         throw const ApiException(
-          'Waktu check-out harus berada pada tanggal koreksi.',
+          'Waktu check-out harus berada pada tanggal koreksi atau hari berikutnya.',
         );
       }
     }
@@ -222,6 +222,21 @@ class DioAttendanceRequestRemoteDataSource
           rawBreakdown.any((item) => item is! Map<String, dynamic>)) {
         throw const FormatException('Overtime pay breakdown is invalid');
       }
+      final breakdown = rawBreakdown
+          .cast<Map<String, dynamic>>()
+          .map(
+            (item) => OvertimePayBand(
+              hours: _requiredNumber(item, 'hours'),
+              rate: _requiredNumber(item, 'rate'),
+              subtotal: _requiredNumber(item, 'subtotal'),
+            ),
+          )
+          .toList(growable: false);
+      if (breakdown.any(
+        (band) => band.hours <= 0 || band.rate < 0 || band.subtotal < 0,
+      )) {
+        throw const FormatException('Overtime pay breakdown is invalid');
+      }
       final result = OvertimePayEstimate(
         overtimeId: overtimeId,
         durationHours: _requiredNumber(data, 'durationHours'),
@@ -229,16 +244,7 @@ class DioAttendanceRequestRemoteDataSource
         hourlyRate: _requiredNumber(data, 'hourlyRate'),
         weightedHours: _requiredNumber(data, 'weightedHours'),
         amount: _requiredNumber(data, 'amount'),
-        breakdown: rawBreakdown
-            .cast<Map<String, dynamic>>()
-            .map(
-              (item) => OvertimePayBand(
-                hours: _requiredNumber(item, 'hours'),
-                rate: _requiredNumber(item, 'rate'),
-                subtotal: _requiredNumber(item, 'subtotal'),
-              ),
-            )
-            .toList(growable: false),
+        breakdown: breakdown,
       );
       if (result.amount < 0 || result.durationHours <= 0) {
         throw const FormatException('Overtime pay response is invalid');
@@ -261,7 +267,7 @@ class DioAttendanceRequestRemoteDataSource
 
   RequestContext _requirePermission(String permission) {
     final context = _requireContext();
-    if (!context.permissions.contains(permission)) {
+    if (!context.hasPermission(permission)) {
       throw ApiException(
         'Akun tidak memiliki izin $permission.',
         statusCode: 403,
@@ -283,14 +289,25 @@ class DioAttendanceRequestRemoteDataSource
         'Attendance correction does not match active session',
       );
     }
+    final date = _requiredDate(json, 'date');
+    final requestedCheckIn = _optionalDate(json['requestedCheckIn']);
+    final requestedCheckOut = _optionalDate(json['requestedCheckOut']);
+    if ((requestedCheckIn != null && !_sameDate(date, requestedCheckIn)) ||
+        (requestedCheckOut != null &&
+            !_sameOrNextDate(date, requestedCheckOut)) ||
+        (requestedCheckIn != null &&
+            requestedCheckOut != null &&
+            !requestedCheckOut.isAfter(requestedCheckIn))) {
+      throw const FormatException('Attendance correction times are invalid');
+    }
     return AttendanceCorrectionRequest(
       id: _requiredText(json, 'id'),
       employeeId: employeeId,
       companyId: companyId,
       attendanceId: _optionalText(json['attendanceId']),
-      date: _requiredDate(json, 'date'),
-      requestedCheckIn: _optionalDate(json['requestedCheckIn']),
-      requestedCheckOut: _optionalDate(json['requestedCheckOut']),
+      date: date,
+      requestedCheckIn: requestedCheckIn,
+      requestedCheckOut: requestedCheckOut,
       reason: _requiredText(json, 'reason'),
       status: _requestStatus(_requiredText(json, 'status')),
       createdAt: _requiredDate(json, 'createdAt'),
@@ -429,6 +446,12 @@ bool _sameDate(DateTime left, DateTime right) =>
     left.year == right.year &&
     left.month == right.month &&
     left.day == right.day;
+
+bool _sameOrNextDate(DateTime date, DateTime value) {
+  if (_sameDate(date, value)) return true;
+  final nextDate = DateTime(date.year, date.month, date.day + 1);
+  return _sameDate(nextDate, value);
+}
 
 String _dateOnly(DateTime value) =>
     DateTime.utc(value.year, value.month, value.day).toIso8601String();

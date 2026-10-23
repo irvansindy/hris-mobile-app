@@ -1,0 +1,485 @@
+{
+  "observedAt": "2026-10-21T09:23:14Z",
+  "status": "PARTIAL_AUDIT_NOT_RELEASE_CLEARANCE",
+  "artifact": {
+    "path": "build/app/outputs/bundle/release/app-release.aab",
+    "sha256": "1acb8134348a855461f635ca06e8f157801daf8c28d7e3c029db5154e4509f82",
+    "builtOn": "2026-10-20",
+    "scope": "Historical local debug-signed release-validation AAB; not current RC, not the APK rebuilt 21 October"
+  },
+  "pubspecLockSha256": "2d45b67589b1e2e3c61745c4f42f318481c09e7ea47eb0cab52164f6cf1d0f65",
+  "verification": {
+    "baselineElfHashesVerified": 24,
+    "releaseArchivesInspected": 100,
+    "method": "Inspect ZIP/TAR and hashes without loading or executing native libraries. llvm-strip only processes copied Flutter ELF in /tmp; originals unchanged.",
+    "stripTool": {
+      "ndk": "28.2.13676358",
+      "options": [
+        "--strip-unneeded"
+      ],
+      "sha256": "1da35c6bcee9649adcaadf8a493132c3b7205901149622836d28e42d7fca7267"
+    },
+    "counts": {
+      "local_application_aot_intermediate": 3,
+      "local_jni_release_intermediate": 3,
+      "resolved_maven_exact": 12,
+      "resolved_maven_after_ndk_strip": 3,
+      "downloaded_distributor_exact": 3
+    }
+  },
+  "pdfiumAndroid": {
+    "release": {
+      "id": 313932158,
+      "tag_name": "chromium/7811",
+      "name": "PDFium 149.0.7811.0",
+      "published_at": "2026-04-27T08:07:10Z",
+      "immutable": true,
+      "assets": [
+        {
+          "id": 406428654,
+          "name": "pdfium-android-arm.tgz",
+          "size": 2765457,
+          "digest": "sha256:bb9250eefb33343f56f27f7e60c81ab3236d932c40e21557bf02ca4c276eb832",
+          "browser_download_url": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7811/pdfium-android-arm.tgz"
+        },
+        {
+          "id": 406428652,
+          "name": "pdfium-android-arm64.tgz",
+          "size": 3310815,
+          "digest": "sha256:f51539cadeb5135534305b8bdf8685ce2fbe9991dbbc5b35f553108411b9ed14",
+          "browser_download_url": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7811/pdfium-android-arm64.tgz"
+        },
+        {
+          "id": 406428649,
+          "name": "pdfium-android-x64.tgz",
+          "size": 3421623,
+          "digest": "sha256:23faaf6f993a39524d9dc7fafbb760e295f8bd5e9ffa46139bad2299fb5c80f3",
+          "browser_download_url": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7811/pdfium-android-x64.tgz"
+        }
+      ]
+    },
+    "versionFile": "149.0.7811.0",
+    "buildFlags": {
+      "pdf_enable_v8": false,
+      "pdf_enable_xfa": false
+    },
+    "hookArchiveChecksumEnforced": false,
+    "hookExistingFileRevalidated": false,
+    "sourceRevisionAttested": false
+  },
+  "pdfiumApple": {
+    "declaredLabel": "144.0.7811.0",
+    "declaredUpstreamBranch": "chromium/7811",
+    "url": "https://github.com/espresso3389/pdfium-xcframework/releases/download/v144.0.7811.0-20260502-190206/PDFium-chromium-7811-20260502-190206.xcframework.zip",
+    "bytes": 23356480,
+    "sha256": "948d9257f53f01cbed74b81bb8adc8758e52ac9390751772de7889026d32d5a1",
+    "downloadMatchesPodspecAndSpmAndReleaseDigest": true,
+    "iosDeviceAndSimulatorSlicesDeclared": true,
+    "ipaResolutionOrBuildVerified": false,
+    "releaseImmutable": false
+  },
+  "sourceArchives": [
+    {
+      "package": "pdfium_dart",
+      "version": "0.3.1",
+      "sha256": "e296a26c030e6e0fb34b32ce7481a3cfa0c2d35ce80f6269551c685759f4c91f",
+      "matchesLockfile": true,
+      "checkedFile": "hook/build.dart",
+      "checkedFileSha256": "3461424e94103c571bc61e882e26a84797933a846b832760a88e82fd7b750283",
+      "cachedFileMatches": true
+    },
+    {
+      "package": "pdfium_flutter",
+      "version": "0.3.1",
+      "sha256": "59897274513984b347fc98e7bf71ba457678daea8b5568cd7c688979aeb77765",
+      "matchesLockfile": true,
+      "checkedFile": "darwin/pdfium_flutter.podspec",
+      "checkedFileSha256": "f4935925e0abb271830413fdefc801c6cb976a0e706b5475ca63c9e347cb0305",
+      "cachedFileMatches": true
+    },
+    {
+      "package": "jni",
+      "version": "1.0.3",
+      "sha256": "f038e58b4dc2c9037f50e233175086337e0b305e356d28211bf55f21c504cbd3",
+      "matchesLockfile": true,
+      "checkedFile": "src/CMakeLists.txt",
+      "checkedFileSha256": "14eb8b434dbd454ce0f9eec04875a49c28cdc501e1c74340bd9ea68fe7762063",
+      "cachedFileMatches": true
+    }
+  ],
+  "advisoryTriage": {
+    "source": "https://chromereleases.googleblog.com/2026/06/stable-channel-update-for-desktop.html",
+    "sourceDate": "2026-06-02",
+    "chromeFixedVersion": "149.0.7827.53/54",
+    "component": "PDFium",
+    "candidateIds": [
+      "CVE-2026-11303",
+      "CVE-2026-11304",
+      "CVE-2026-11305",
+      "CVE-2026-11306",
+      "CVE-2026-11307"
+    ],
+    "severityAsPublished": "Low",
+    "standaloneApplicability": "NOT_DETERMINED",
+    "note": "Chrome versions and advisory scope cannot alone establish standalone PDFium exploitability. No fresh OSV full scan or binary fuzzing performed."
+  },
+  "libraries": [
+    {
+      "abi": "arm64-v8a",
+      "name": "libapp.so",
+      "sha256": "0bb56cf52c9603d1acd2be962223eefe9a4d372560f488c9b2f940b485bcec95",
+      "matches": [],
+      "candidates": [],
+      "originClass": "local_application_aot_intermediate",
+      "source": {
+        "path": "build/app/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/arm64-v8a/libapp.so",
+        "cleanRebuildProvenanceVerified": false
+      }
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libdartjni.so",
+      "sha256": "cae4856f002c22cf94b4916aa0489dd94d7e729ccae1132bc0545fada70428b7",
+      "matches": [],
+      "candidates": [],
+      "originClass": "local_jni_release_intermediate",
+      "source": {
+        "path": "build/jni/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/arm64-v8a/libdartjni.so",
+        "package": "jni",
+        "version": "1.0.3",
+        "cmakeBuildType": "RelWithDebInfo",
+        "ndk": "28.2.13676358"
+      }
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libdatastore_shared_counter.so",
+      "sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1",
+      "matches": [
+        {
+          "coordinate": "androidx.datastore:datastore-core-android:1.1.7",
+          "archiveSha256": "adca1d7cde73406fcca2a0eeabac63459adc9d1fe201b79ba08711fa2e331984",
+          "entry": "jni/arm64-v8a/libdatastore_shared_counter.so",
+          "rawSha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libface_detector_v2_jni.so",
+      "sha256": "d2d105239f5c723838a6bea81ee9cf828b8a56b4de4bc1f4a2556b320d758851",
+      "matches": [
+        {
+          "coordinate": "com.google.mlkit:face-detection:16.1.7",
+          "archiveSha256": "3d8556a418b5474598d7f747f8e235de8f5da23ae529e3b0a2d8d4dbe83f6ded",
+          "entry": "jni/arm64-v8a/libface_detector_v2_jni.so",
+          "rawSha256": "d2d105239f5c723838a6bea81ee9cf828b8a56b4de4bc1f4a2556b320d758851"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libflutter.so",
+      "sha256": "f0c52be9b4d8cc472fae6d2dbdbee8c4f958fdb104fdf439e274fe641aea82b9",
+      "matches": [],
+      "candidates": [
+        {
+          "coordinate": "io.flutter:arm64_v8a_release:1.0.0-39c38b759eba9bcf048f203176845d7b1baef159",
+          "archiveSha256": "09de58f8c877d694b7e4e5e9e66ed100472d91e4b08d6e338226a4e812608787",
+          "entry": "lib/arm64-v8a/libflutter.so",
+          "rawSha256": "cf188deb30194fd08bf2a3c0be8923fad44fcbc21fd2eb6caf990d59549ee5ea",
+          "strippedSha256": "f0c52be9b4d8cc472fae6d2dbdbee8c4f958fdb104fdf439e274fe641aea82b9"
+        }
+      ],
+      "originClass": "resolved_maven_after_ndk_strip"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libimage_processing_util_jni.so",
+      "sha256": "0292b063fafccf734472cbb59588e756c2dbca907c72021ba6fbf126385508a2",
+      "matches": [
+        {
+          "coordinate": "androidx.camera:camera-core:1.6.2",
+          "archiveSha256": "ebd66f090414f4c12f23a55b5023aeee1b096da8a06c02a0b6fb3520c4ddadf6",
+          "entry": "jni/arm64-v8a/libimage_processing_util_jni.so",
+          "rawSha256": "0292b063fafccf734472cbb59588e756c2dbca907c72021ba6fbf126385508a2"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libpdfium.so",
+      "sha256": "ef8c440d29e2a0820a65554487d23020bd88756ee2d6aad8f8fb59bab3b2eb14",
+      "matches": [],
+      "candidates": [],
+      "originClass": "downloaded_distributor_exact",
+      "source": {
+        "assetId": 406428652,
+        "url": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7811/pdfium-android-arm64.tgz",
+        "archiveSha256": "f51539cadeb5135534305b8bdf8685ce2fbe9991dbbc5b35f553108411b9ed14",
+        "binaryEntry": "lib/libpdfium.so"
+      }
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libsurface_util_jni.so",
+      "sha256": "a5c9d1928ea92ec7a94dff8cf666e7739cd734198b9f0ae1d4e28ea3c86516ba",
+      "matches": [
+        {
+          "coordinate": "androidx.camera:camera-core:1.6.2",
+          "archiveSha256": "ebd66f090414f4c12f23a55b5023aeee1b096da8a06c02a0b6fb3520c4ddadf6",
+          "entry": "jni/arm64-v8a/libsurface_util_jni.so",
+          "rawSha256": "a5c9d1928ea92ec7a94dff8cf666e7739cd734198b9f0ae1d4e28ea3c86516ba"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libapp.so",
+      "sha256": "6fbfc1e78b4a5870a2fcc050eac1285c3077cc14bf1232ea7c17abe61b6e41fd",
+      "matches": [],
+      "candidates": [],
+      "originClass": "local_application_aot_intermediate",
+      "source": {
+        "path": "build/app/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/armeabi-v7a/libapp.so",
+        "cleanRebuildProvenanceVerified": false
+      }
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libdartjni.so",
+      "sha256": "382508bb31019a1330fc7047dcf1d417b45576bbb8200353d79122b186e50ca8",
+      "matches": [],
+      "candidates": [],
+      "originClass": "local_jni_release_intermediate",
+      "source": {
+        "path": "build/jni/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/armeabi-v7a/libdartjni.so",
+        "package": "jni",
+        "version": "1.0.3",
+        "cmakeBuildType": "RelWithDebInfo",
+        "ndk": "28.2.13676358"
+      }
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libdatastore_shared_counter.so",
+      "sha256": "716c5d8d2cac8ca0edf65da8f139c7886b726ac79d542a14edeb94994ba6d3dc",
+      "matches": [
+        {
+          "coordinate": "androidx.datastore:datastore-core-android:1.1.7",
+          "archiveSha256": "adca1d7cde73406fcca2a0eeabac63459adc9d1fe201b79ba08711fa2e331984",
+          "entry": "jni/armeabi-v7a/libdatastore_shared_counter.so",
+          "rawSha256": "716c5d8d2cac8ca0edf65da8f139c7886b726ac79d542a14edeb94994ba6d3dc"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libface_detector_v2_jni.so",
+      "sha256": "21e48bd253e1c87edee42bce9a51048ac3082d681446d0d05a79c4ad0f5e187b",
+      "matches": [
+        {
+          "coordinate": "com.google.mlkit:face-detection:16.1.7",
+          "archiveSha256": "3d8556a418b5474598d7f747f8e235de8f5da23ae529e3b0a2d8d4dbe83f6ded",
+          "entry": "jni/armeabi-v7a/libface_detector_v2_jni.so",
+          "rawSha256": "21e48bd253e1c87edee42bce9a51048ac3082d681446d0d05a79c4ad0f5e187b"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libflutter.so",
+      "sha256": "1831e904bfd2b86c41d91d719f4e3c01b105ee927f5da8ab4408a13e1a56d47a",
+      "matches": [],
+      "candidates": [
+        {
+          "coordinate": "io.flutter:armeabi_v7a_release:1.0.0-39c38b759eba9bcf048f203176845d7b1baef159",
+          "archiveSha256": "cdaa15cba069490239274479d33887a71953d5a91977de4c17bbd259530a5464",
+          "entry": "lib/armeabi-v7a/libflutter.so",
+          "rawSha256": "0927c47f2bc1c72ec469090658a20a82c192906796f2e1ab90864e9bed93621e",
+          "strippedSha256": "1831e904bfd2b86c41d91d719f4e3c01b105ee927f5da8ab4408a13e1a56d47a"
+        }
+      ],
+      "originClass": "resolved_maven_after_ndk_strip"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libimage_processing_util_jni.so",
+      "sha256": "05973c0cf8e8dd281c8ec505c41814b78b740461056925bb41120594d7c35dcd",
+      "matches": [
+        {
+          "coordinate": "androidx.camera:camera-core:1.6.2",
+          "archiveSha256": "ebd66f090414f4c12f23a55b5023aeee1b096da8a06c02a0b6fb3520c4ddadf6",
+          "entry": "jni/armeabi-v7a/libimage_processing_util_jni.so",
+          "rawSha256": "05973c0cf8e8dd281c8ec505c41814b78b740461056925bb41120594d7c35dcd"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libpdfium.so",
+      "sha256": "3d67be8a7f8a4f77e5a91530fbab69e0b27a8f4f4db5d4a0df512fbfaf40bd27",
+      "matches": [],
+      "candidates": [],
+      "originClass": "downloaded_distributor_exact",
+      "source": {
+        "assetId": 406428654,
+        "url": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7811/pdfium-android-arm.tgz",
+        "archiveSha256": "bb9250eefb33343f56f27f7e60c81ab3236d932c40e21557bf02ca4c276eb832",
+        "binaryEntry": "lib/libpdfium.so"
+      }
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libsurface_util_jni.so",
+      "sha256": "78eb0b10e91b819be97cb7daa8c97fb757fa6d07cb80ccb7e92c113b45bda9be",
+      "matches": [
+        {
+          "coordinate": "androidx.camera:camera-core:1.6.2",
+          "archiveSha256": "ebd66f090414f4c12f23a55b5023aeee1b096da8a06c02a0b6fb3520c4ddadf6",
+          "entry": "jni/armeabi-v7a/libsurface_util_jni.so",
+          "rawSha256": "78eb0b10e91b819be97cb7daa8c97fb757fa6d07cb80ccb7e92c113b45bda9be"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libapp.so",
+      "sha256": "c587cccc86cabf689a8cb407e86843cbeeab61f6dd436bb76a46fe4ae3a1dfd3",
+      "matches": [],
+      "candidates": [],
+      "originClass": "local_application_aot_intermediate",
+      "source": {
+        "path": "build/app/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/x86_64/libapp.so",
+        "cleanRebuildProvenanceVerified": false
+      }
+    },
+    {
+      "abi": "x86_64",
+      "name": "libdartjni.so",
+      "sha256": "69f95f55f85c000cf02a743d9318df79e90e96857fcbdaa7c628de24057eca74",
+      "matches": [],
+      "candidates": [],
+      "originClass": "local_jni_release_intermediate",
+      "source": {
+        "path": "build/jni/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/x86_64/libdartjni.so",
+        "package": "jni",
+        "version": "1.0.3",
+        "cmakeBuildType": "RelWithDebInfo",
+        "ndk": "28.2.13676358"
+      }
+    },
+    {
+      "abi": "x86_64",
+      "name": "libdatastore_shared_counter.so",
+      "sha256": "fb6c9208988c49ae94943bc3236fa763ba584722e044fa4ea9a12d2941027105",
+      "matches": [
+        {
+          "coordinate": "androidx.datastore:datastore-core-android:1.1.7",
+          "archiveSha256": "adca1d7cde73406fcca2a0eeabac63459adc9d1fe201b79ba08711fa2e331984",
+          "entry": "jni/x86_64/libdatastore_shared_counter.so",
+          "rawSha256": "fb6c9208988c49ae94943bc3236fa763ba584722e044fa4ea9a12d2941027105"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libface_detector_v2_jni.so",
+      "sha256": "bd2a0761c113a5285aff5591cc9a516fce8b351175151ba2e0390b2bfe64d8fe",
+      "matches": [
+        {
+          "coordinate": "com.google.mlkit:face-detection:16.1.7",
+          "archiveSha256": "3d8556a418b5474598d7f747f8e235de8f5da23ae529e3b0a2d8d4dbe83f6ded",
+          "entry": "jni/x86_64/libface_detector_v2_jni.so",
+          "rawSha256": "bd2a0761c113a5285aff5591cc9a516fce8b351175151ba2e0390b2bfe64d8fe"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libflutter.so",
+      "sha256": "725b68d1374a43c8fd3c3e18861a4bd2b27ad46485738f6aac9eff4dd871d9ed",
+      "matches": [],
+      "candidates": [
+        {
+          "coordinate": "io.flutter:x86_64_release:1.0.0-39c38b759eba9bcf048f203176845d7b1baef159",
+          "archiveSha256": "efaf3acec28bdba67874026a33f4f148ce075dc4158b9f617f4ae71fbb493aa8",
+          "entry": "lib/x86_64/libflutter.so",
+          "rawSha256": "e8c46633585756fd9a081722f83f487c591df66d972222e3fa473c84aaa4e825",
+          "strippedSha256": "725b68d1374a43c8fd3c3e18861a4bd2b27ad46485738f6aac9eff4dd871d9ed"
+        }
+      ],
+      "originClass": "resolved_maven_after_ndk_strip"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libimage_processing_util_jni.so",
+      "sha256": "112703727717651e69e91f3ea2c3c2311737ee5809a909c9d342a811b6c7c069",
+      "matches": [
+        {
+          "coordinate": "androidx.camera:camera-core:1.6.2",
+          "archiveSha256": "ebd66f090414f4c12f23a55b5023aeee1b096da8a06c02a0b6fb3520c4ddadf6",
+          "entry": "jni/x86_64/libimage_processing_util_jni.so",
+          "rawSha256": "112703727717651e69e91f3ea2c3c2311737ee5809a909c9d342a811b6c7c069"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libpdfium.so",
+      "sha256": "dd8c2880d41baf4c6406d5d2bf0c1beffe42b45e756ff08a9c612ad35d5a5c64",
+      "matches": [],
+      "candidates": [],
+      "originClass": "downloaded_distributor_exact",
+      "source": {
+        "assetId": 406428649,
+        "url": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7811/pdfium-android-x64.tgz",
+        "archiveSha256": "23faaf6f993a39524d9dc7fafbb760e295f8bd5e9ffa46139bad2299fb5c80f3",
+        "binaryEntry": "lib/libpdfium.so"
+      }
+    },
+    {
+      "abi": "x86_64",
+      "name": "libsurface_util_jni.so",
+      "sha256": "e5311942b4fce0f7f2505d41150cf9921e558a6368929cb73127450f74dd4fe4",
+      "matches": [
+        {
+          "coordinate": "androidx.camera:camera-core:1.6.2",
+          "archiveSha256": "ebd66f090414f4c12f23a55b5023aeee1b096da8a06c02a0b6fb3520c4ddadf6",
+          "entry": "jni/x86_64/libsurface_util_jni.so",
+          "rawSha256": "e5311942b4fce0f7f2505d41150cf9921e558a6368929cb73127450f74dd4fe4"
+        }
+      ],
+      "candidates": [],
+      "originClass": "resolved_maven_exact"
+    }
+  ],
+  "pending": [
+    "Enforce authenticated/pinned integrity verification in native download/build path, including cache reuse; do not mistake observed hashes for an existing CI guard.",
+    "Map PDFium and bundled third-party source revisions/build flags to advisories; current package-level OSV evidence does not clear native code.",
+    "Resolve and inspect final iOS IPA on macOS; declared/downloaded XCFramework is not a built IPA.",
+    "Repeat native mapping and advisory audit on final clean toolchain/commit/signed artifacts and obtain Security/DevOps sign-off."
+  ]
+}

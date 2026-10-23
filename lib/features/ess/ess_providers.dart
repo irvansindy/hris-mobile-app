@@ -38,6 +38,18 @@ final travelSnapshotProvider = FutureProvider.autoDispose
       return value;
     });
 
+final assetPageProvider = FutureProvider.autoDispose
+    .family<AssetPage, ({FeatureSession session, int page})>((
+      ref,
+      query,
+    ) async {
+      final value = await ref
+          .watch(essRepositoryProvider)
+          .getAssets(page: query.page);
+      _current(query.session);
+      return value;
+    });
+
 final loanDetailProvider = FutureProvider.autoDispose
     .family<
       ({List<LoanInstallment> installments, LoanAmortization amortization}),
@@ -126,7 +138,7 @@ class EssMutationController extends Notifier<AsyncValue<void>> {
         tripId: command.tripId,
         description: command.description,
         notes: command.notes,
-        receiptFilePath: uploaded.filePath,
+        receiptFilePath: uploaded.referenceUrl,
       );
     }
     return repository.createClaim(finalCommand);

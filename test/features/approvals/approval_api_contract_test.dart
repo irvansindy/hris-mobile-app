@@ -17,6 +17,29 @@ void main() {
     permissions: ['workflow:approve'],
   );
 
+  for (final status in [403, 409]) {
+    test(
+      'workflow $status rejection is not retried through a legacy approval endpoint',
+      () async {
+        final adapter = _ApprovalAdapter(defect: 'action-$status');
+        final dio = Dio()..httpClientAdapter = adapter;
+        addTearDown(dio.close);
+        await expectLater(
+          DioApprovalRemoteDataSource(dio, () => approverContext).applyAction(
+            instanceId: 'instance-1',
+            action: WorkflowApprovalAction.approve,
+          ),
+          throwsA(
+            isA<ApiException>().having((e) => e.statusCode, 'status', status),
+          ),
+        );
+        expect(adapter.requests.map((r) => r.path), [
+          '/workflow-engine/instances/instance-1/actions',
+        ]);
+      },
+    );
+  }
+
   test(
     'approval queue uses approver endpoint and strict tenant context',
     () async {
@@ -35,10 +58,82 @@ void main() {
       expect(page.page, 2);
       expect(page.totalPages, 3);
       expect(page.total, 41);
+      expect(page.hasMore, isTrue);
       expect(page.items.single.instanceId, 'instance-1');
       expect(page.items.single.requesterLabel, 'Karyawan Uji');
     },
   );
+
+  test('queue trusts hasNextPage even when totalPages is zero', () async {
+    final adapter = _ApprovalAdapter(defect: 'zero-total-pages');
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+
+    final page = await DioApprovalRemoteDataSource(
+      dio,
+      () => approverContext,
+    ).getQueue(page: 1, limit: 20);
+
+    expect(page.totalPages, 0);
+    expect(page.hasMore, isTrue);
+  });
+
+  test('detail uses workflow read and rejects foreign tenant', () async {
+    const reader = RequestContext(
+      userId: 'user-1',
+      employeeId: 'employee-1',
+      activeCompanyId: 'company-1',
+      companyScope: ['company-1'],
+      permissions: ['workflow:*'],
+    );
+    final adapter = _ApprovalAdapter();
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+
+    final detail = await DioApprovalRemoteDataSource(
+      dio,
+      () => reader,
+    ).getDetail('instance-1');
+
+    expect(
+      adapter.requests.single.path,
+      '/workflow-engine/instances/instance-1',
+    );
+    expect(detail.instanceId, 'instance-1');
+    expect(detail.subjectEmployeeIds, contains('employee-2'));
+
+    final foreignDio = Dio()
+      ..httpClientAdapter = _ApprovalAdapter(defect: 'foreign-company');
+    addTearDown(foreignDio.close);
+    await expectLater(
+      DioApprovalRemoteDataSource(
+        foreignDio,
+        () => reader,
+      ).getDetail('instance-1'),
+      throwsFormatException,
+    );
+  });
+
+  test('self approval is blocked before action request', () async {
+    final adapter = _ApprovalAdapter();
+    final dio = Dio()..httpClientAdapter = adapter;
+    addTearDown(dio.close);
+    final remote = DioApprovalRemoteDataSource(dio, () => approverContext);
+
+    await expectLater(
+      remote.applyAction(
+        instanceId: 'instance-1',
+        action: WorkflowApprovalAction.approve,
+        subjectEmployeeId: 'employee-1',
+      ),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 403)
+            .having((error) => error.code, 'code', 'SELF_APPROVAL_FORBIDDEN'),
+      ),
+    );
+    expect(adapter.requests, isEmpty);
+  });
 
   test(
     'queue is blocked locally without workflow approve permission',
@@ -257,8 +352,22 @@ class _ApprovalAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     requests.add(options);
+    if (defect == 'action-403' || defect == 'action-409') {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': false,
+          'code': defect == 'action-403' ? 'FORBIDDEN' : 'CONFLICT',
+          'message': 'Approval chain rejected this action',
+        }),
+        defect == 'action-403' ? 403 : 409,
+        headers: {
+          Headers.contentTypeHeader: ['application/json'],
+        },
+      );
+    }
     final Object? data = switch ((options.method, options.path)) {
       ('GET', '/workflow-engine/instances/my-approvals') => [_approval()],
+      ('GET', '/workflow-engine/instances/instance-1') => _instance(),
       ('POST', '/workflow-engine/instances/bulk-approve') => {
         'total': 2,
         'successful': 1,
@@ -282,7 +391,13 @@ class _ApprovalAdapter implements HttpClientAdapter {
     };
     final body = <String, Object?>{'success': true, 'data': data};
     if (options.path == '/workflow-engine/instances/my-approvals') {
-      body['meta'] = {'page': 2, 'limit': 20, 'total': 41, 'totalPages': 3};
+      body['meta'] = {
+        'page': defect == 'zero-total-pages' ? 1 : 2,
+        'limit': 20,
+        'total': 41,
+        'totalPages': defect == 'zero-total-pages' ? 0 : 3,
+        'hasNextPage': true,
+      };
     }
     return ResponseBody.fromString(
       jsonEncode(body),
@@ -318,6 +433,19 @@ class _ApprovalAdapter implements HttpClientAdapter {
         'approvalType': 'LEAVE',
       },
     },
+  };
+
+  Map<String, Object?> _instance() => {
+    'id': 'instance-1',
+    'companyId': defect == 'foreign-company' ? 'company-2' : 'company-1',
+    'approvalType': 'LEAVE',
+    'referenceType': 'LEAVE_REQUEST',
+    'referenceId': 'leave-1',
+    'requesterId': 'user-2',
+    'payload': {'employeeId': 'employee-2', 'employeeName': 'Karyawan Uji'},
+    'status': 'PENDING',
+    'currentLevel': 1,
+    'createdAt': '2026-09-18T07:30:00.000Z',
   };
 
   Map<String, Object?> _delegation({bool active = true}) => {

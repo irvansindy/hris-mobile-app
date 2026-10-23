@@ -22,6 +22,7 @@ class MainShell extends ConsumerStatefulWidget {
     required this.onThemeToggle,
     required this.onSignOut,
     this.navigationShell,
+    this.isBranchRoot = true,
     this.quickActions = const [],
     this.scrollControllers,
   }) : assert(scrollControllers == null || scrollControllers.length == 4);
@@ -30,6 +31,7 @@ class MainShell extends ConsumerStatefulWidget {
   final VoidCallback onThemeToggle;
   final VoidCallback onSignOut;
   final StatefulNavigationShell? navigationShell;
+  final bool isBranchRoot;
   final List<AppQuickActionItem> quickActions;
   final List<ScrollController>? scrollControllers;
 
@@ -129,7 +131,7 @@ class _MainShellState extends ConsumerState<MainShell> {
             ),
             bottomNavigationBar: AppFloatingNavigation(
               items: _items,
-              selectedIndex: _currentIndex,
+              selectedIndex: widget.isBranchRoot ? _currentIndex : -1,
               onDestinationSelected: _selectDestination,
               onCenterPressed: _openAttendance,
               quickActionsExpanded: _quickActionsVisible,
@@ -140,7 +142,9 @@ class _MainShellState extends ConsumerState<MainShell> {
               actions: widget.quickActions,
               onDismiss: _closeQuickActions,
             ),
-          if (_currentIndex == 0 && widget.quickActions.isNotEmpty)
+          if (_currentIndex == 0 &&
+              widget.isBranchRoot &&
+              widget.quickActions.isNotEmpty)
             Positioned(
               right: 22,
               bottom: 106 + MediaQuery.paddingOf(context).bottom,
@@ -182,7 +186,7 @@ class _MainShellState extends ConsumerState<MainShell> {
   void _selectDestination(int index) {
     HapticFeedback.selectionClick();
     _closeQuickActions();
-    if (index == _currentIndex) {
+    if (index == _currentIndex && widget.isBranchRoot) {
       final controller = _scrollControllers[index];
       if (controller.hasClients) {
         _scrollToStart(controller);
@@ -190,7 +194,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       return;
     }
     if (widget.navigationShell case final navigationShell?) {
-      navigationShell.goBranch(index);
+      navigationShell.goBranch(index, initialLocation: true);
     } else {
       setState(() => _standaloneIndex = index);
     }

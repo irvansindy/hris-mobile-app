@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +14,10 @@ import 'package:hrm_app/features/dashboard/presentation/screens/home_screen.dart
 import 'package:hrm_app/features/calendar/presentation/screens/calendar_screen.dart';
 import 'package:hrm_app/features/profile/presentation/screens/profile_screen.dart';
 import 'package:hrm_app/core/widgets/app_navigation.dart';
+import 'package:hrm_app/features/account_security/account_security_providers.dart';
+import 'package:hrm_app/features/approvals/approval_dependencies.dart';
+import 'package:hrm_app/features/ess/ess_providers.dart';
+import 'package:hrm_app/features/notifications/notification_providers.dart';
 
 void main() {
   testWidgets(
@@ -61,21 +66,44 @@ void main() {
       await tester.scrollUntilVisible(find.text('Lihat semua'), 180);
       await tester.tap(find.text('Lihat semua'));
       await tester.pumpAndSettle();
-      expect(find.text('Tim contoh · Divisi Marketing'), findsOneWidget);
+      expect(find.text('Tim Hari Ini · Divisi Marketing'), findsOneWidget);
       expect(find.byType(AppQuickActionFab).hitTestable(), findsNothing);
       await tester.tapAt(const Offset(20, 100));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Absensi').last);
       await tester.pumpAndSettle();
       expect(find.byType(AttendanceScreen), findsOneWidget);
-      for (final label in ['Catat masuk', 'Catat pulang']) {
-        await tester.ensureVisible(find.text(label));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text(label));
-        await tester.pumpAndSettle();
-        await tester.pump(const Duration(seconds: 5));
-        await tester.pumpAndSettle();
-      }
+      expect(
+        find.byKey(const ValueKey('attendance-summary-section')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('attendance-location-section')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('attendance-metrics-section')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('attendance-state-section')),
+        findsOneWidget,
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('attendance-submit-action')),
+        300,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Catat masuk'));
+      await tester.pumpAndSettle();
+      expect(faceVerificationCalls, 1);
+      expect(find.text('Catat pulang'), findsOneWidget);
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('attendance-submit-action')),
+      );
+      await tester.tap(find.text('Catat pulang'));
+      await tester.pumpAndSettle();
       expect(faceVerificationCalls, 2);
       expect(store.today!['out'], isNotNull);
       await tester.tap(find.text('Kalender').last);
@@ -84,7 +112,7 @@ void main() {
       await tester.tap(find.text('Profil').last);
       await tester.pumpAndSettle();
       expect(find.byType(ProfileScreen), findsOneWidget);
-      expect(find.text('Pengujian demo · Face ID'), findsOneWidget);
+      expect(find.text('Kelola Face ID'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -109,4 +137,29 @@ void main() {
       dio.close();
     },
   );
+
+  test('secondary features use local demo repositories', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final store = DemoStore(preferences);
+    await store.load();
+    final container = ProviderContainer(overrides: demoOverrides(store));
+    addTearDown(container.dispose);
+
+    final notifications = await container
+        .read(notificationRepositoryProvider)
+        .load(limit: 50);
+    final approvals = await container
+        .read(approvalRepositoryProvider)
+        .getQueue(page: 1);
+    final loans = await container.read(essRepositoryProvider).getLoans();
+    final sessions = await container
+        .read(accountSecurityRepositoryProvider)
+        .loadSessions();
+
+    expect(notifications.items, isNotEmpty);
+    expect(approvals.items, isEmpty);
+    expect(loans.loans, isEmpty);
+    expect(sessions, isEmpty);
+  });
 }

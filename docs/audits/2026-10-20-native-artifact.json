@@ -1,0 +1,298 @@
+{
+  "artifact": "build/app/outputs/bundle/release/app-release.aab",
+  "bytes": 88295186,
+  "sha256": "1acb8134348a855461f635ca06e8f157801daf8c28d7e3c029db5154e4509f82",
+  "modifiedAt": "2026-10-20T11:20:49.705Z",
+  "scope": "Local debug-signed release-validation AAB; ELF metadata only, not binary vulnerability clearance",
+  "configuration": {
+    "appEnv": "production",
+    "baseUrl": "https://ci.invalid/api/v1",
+    "pushMode": "disabled",
+    "logging": false
+  },
+  "libraries": [
+    {
+      "abi": "arm64-v8a",
+      "name": "libapp.so",
+      "bytes": 10027992,
+      "sha256": "0bb56cf52c9603d1acd2be962223eefe9a4d372560f488c9b2f940b485bcec95",
+      "loadAlignments": [
+        "0x10000",
+        "0x10000",
+        "0x10000"
+      ],
+      "buildId": "d89c2eafcd1aa6cf65811e376c9200b5"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libdartjni.so",
+      "bytes": 131248,
+      "sha256": "cae4856f002c22cf94b4916aa0489dd94d7e729ccae1132bc0545fada70428b7",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "bb1e2bd0601b3319132e691a2dca35e91f72bfa2"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libdatastore_shared_counter.so",
+      "bytes": 7112,
+      "sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "17db37bd6770ac00dd2d1d2828839fd23a7959a3"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libface_detector_v2_jni.so",
+      "bytes": 8520960,
+      "sha256": "d2d105239f5c723838a6bea81ee9cf828b8a56b4de4bc1f4a2556b320d758851",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "e390627463de9c2a2c11a89e722a6f51"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libflutter.so",
+      "bytes": 11292616,
+      "sha256": "f0c52be9b4d8cc472fae6d2dbdbee8c4f958fdb104fdf439e274fe641aea82b9",
+      "loadAlignments": [
+        "0x10000",
+        "0x10000",
+        "0x10000"
+      ],
+      "buildId": "42e4bdab855b273692b2a4ad5bacdfef59faaf0c"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libimage_processing_util_jni.so",
+      "bytes": 32528,
+      "sha256": "0292b063fafccf734472cbb59588e756c2dbca907c72021ba6fbf126385508a2",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "cb419a7ebfbe8c0ac8d81932d5037effe7d657d4"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libpdfium.so",
+      "bytes": 6386696,
+      "sha256": "ef8c440d29e2a0820a65554487d23020bd88756ee2d6aad8f8fb59bab3b2eb14",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "5b17e9febac57bb3"
+    },
+    {
+      "abi": "arm64-v8a",
+      "name": "libsurface_util_jni.so",
+      "bytes": 4896,
+      "sha256": "a5c9d1928ea92ec7a94dff8cf666e7739cd734198b9f0ae1d4e28ea3c86516ba",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "341a0425aaef60e916c389fe26d31f28fd182631"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libapp.so",
+      "bytes": 11092552,
+      "sha256": "6fbfc1e78b4a5870a2fcc050eac1285c3077cc14bf1232ea7c17abe61b6e41fd",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "0ff9192bfc1d1470ce713e2c5bcb59cc"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libdartjni.so",
+      "bytes": 81444,
+      "sha256": "382508bb31019a1330fc7047dcf1d417b45576bbb8200353d79122b186e50ca8",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "0133883ada2ac499888329a8067d77c935111685"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libdatastore_shared_counter.so",
+      "bytes": 4416,
+      "sha256": "716c5d8d2cac8ca0edf65da8f139c7886b726ac79d542a14edeb94994ba6d3dc",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "c2c541cc4337a0fc28271329ef238d6bddf6d70d"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libface_detector_v2_jni.so",
+      "bytes": 5388224,
+      "sha256": "21e48bd253e1c87edee42bce9a51048ac3082d681446d0d05a79c4ad0f5e187b",
+      "loadAlignments": [
+        "0x1000",
+        "0x1000",
+        "0x1000"
+      ],
+      "buildId": "2e94324788620fed426ff7412aa62bbb"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libflutter.so",
+      "bytes": 8413620,
+      "sha256": "1831e904bfd2b86c41d91d719f4e3c01b105ee927f5da8ab4408a13e1a56d47a",
+      "loadAlignments": [
+        "0x10000",
+        "0x10000",
+        "0x10000"
+      ],
+      "buildId": "c1594e1132a1cc4b258684b1ae6bb1e2d82496c1"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libimage_processing_util_jni.so",
+      "bytes": 24448,
+      "sha256": "05973c0cf8e8dd281c8ec505c41814b78b740461056925bb41120594d7c35dcd",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "7b7e032d709f37126af0fd650e9b7ecfdd5cb15f"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libpdfium.so",
+      "bytes": 4209140,
+      "sha256": "3d67be8a7f8a4f77e5a91530fbab69e0b27a8f4f4db5d4a0df512fbfaf40bd27",
+      "loadAlignments": [
+        "0x1000",
+        "0x1000",
+        "0x1000"
+      ],
+      "buildId": "0fb9e66a468dd4da"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "name": "libsurface_util_jni.so",
+      "bytes": 3460,
+      "sha256": "78eb0b10e91b819be97cb7daa8c97fb757fa6d07cb80ccb7e92c113b45bda9be",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "5cbf12c53ab08f5ecc15a49f80700709c546d955"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libapp.so",
+      "bytes": 10290136,
+      "sha256": "c587cccc86cabf689a8cb407e86843cbeeab61f6dd436bb76a46fe4ae3a1dfd3",
+      "loadAlignments": [
+        "0x10000",
+        "0x10000",
+        "0x10000"
+      ],
+      "buildId": "ddf8e3d66e6da4ed010fddbd970f3c43"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libdartjni.so",
+      "bytes": 116640,
+      "sha256": "69f95f55f85c000cf02a743d9318df79e90e96857fcbdaa7c628de24057eca74",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "68b1930895aa213e5af81153a9dab53ed40e0be3"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libdatastore_shared_counter.so",
+      "bytes": 6224,
+      "sha256": "fb6c9208988c49ae94943bc3236fa763ba584722e044fa4ea9a12d2941027105",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "c6ef0802be059f5f59b23f1205d040dbc5b1ccad"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libface_detector_v2_jni.so",
+      "bytes": 9685400,
+      "sha256": "bd2a0761c113a5285aff5591cc9a516fce8b351175151ba2e0390b2bfe64d8fe",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "fa71688254117a49de1967e4f04fd21a"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libflutter.so",
+      "bytes": 12409584,
+      "sha256": "725b68d1374a43c8fd3c3e18861a4bd2b27ad46485738f6aac9eff4dd871d9ed",
+      "loadAlignments": [
+        "0x10000",
+        "0x10000",
+        "0x10000"
+      ],
+      "buildId": "a3e2f028184352484409e3234072c797bc877e99"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libimage_processing_util_jni.so",
+      "bytes": 49416,
+      "sha256": "112703727717651e69e91f3ea2c3c2311737ee5809a909c9d342a811b6c7c069",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "23d5fe1f94160f1476d859a0b95f8028f1c4cf9f"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libpdfium.so",
+      "bytes": 6604440,
+      "sha256": "dd8c2880d41baf4c6406d5d2bf0c1beffe42b45e756ff08a9c612ad35d5a5c64",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "1fb2c70aba47dffa"
+    },
+    {
+      "abi": "x86_64",
+      "name": "libsurface_util_jni.so",
+      "bytes": 4912,
+      "sha256": "e5311942b4fce0f7f2505d41150cf9921e558a6368929cb73127450f74dd4fe4",
+      "loadAlignments": [
+        "0x4000",
+        "0x4000"
+      ],
+      "buildId": "367c72cc2de9475d5b67616ec7af63286fc182f6"
+    }
+  ]
+}

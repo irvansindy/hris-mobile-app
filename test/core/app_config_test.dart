@@ -3,12 +3,85 @@ import 'package:hrm_app/core/config/app_config.dart';
 
 void main() {
   group('AppConfig', () {
+    test('Firebase push is available only for development debug', () {
+      final config = AppConfig.fromEnvironment(
+        productionBuild: false,
+        values: const {'PUSH_MODE': 'firebase'},
+      );
+      expect(config.pushMode.name, 'firebase');
+      for (final productionBuild in [false, true]) {
+        expect(
+          () => AppConfig.fromEnvironment(
+            productionBuild: productionBuild,
+            values: const {
+              'APP_ENV': 'production',
+              'BASE_URL': 'https://api.example.test/api/v1',
+              'PUSH_MODE': 'firebase',
+            },
+          ),
+          throwsA(isA<AppConfigException>()),
+        );
+      }
+    });
+
     test('development keeps an explicit, development-only HTTP fallback', () {
       final config = AppConfig.fromEnvironment(productionBuild: false);
 
       expect(config.environment, AppEnvironment.development);
       expect(config.baseUrl, AppConfig.developmentBaseUrl);
       expect(config.enableNetworkLogs, isFalse);
+      expect(config.pushMode, PushMode.disabled);
+    });
+
+    test('dummy push is allowed in debug, including production data', () {
+      for (final environment in ['development', 'production']) {
+        final config = AppConfig.fromEnvironment(
+          productionBuild: false,
+          values: {
+            'APP_ENV': environment,
+            'BASE_URL': 'https://api.example.test/api/v1',
+            'PUSH_MODE': 'dummy',
+          },
+        );
+        expect(config.pushMode, PushMode.dummy);
+      }
+    });
+
+    test('profile/release rejects dummy push even with valid HTTPS', () {
+      expect(
+        () => AppConfig.fromEnvironment(
+          productionBuild: true,
+          values: const {
+            'BASE_URL': 'https://api.example.test/api/v1',
+            'PUSH_MODE': 'dummy',
+          },
+        ),
+        throwsA(
+          isA<AppConfigException>().having(
+            (error) => error.message,
+            'setting',
+            contains('PUSH_MODE'),
+          ),
+        ),
+      );
+      final config = AppConfig.fromEnvironment(
+        productionBuild: true,
+        values: const {
+          'BASE_URL': 'https://api.example.test/api/v1',
+          'PUSH_MODE': 'disabled',
+        },
+      );
+      expect(config.pushMode, PushMode.disabled);
+    });
+
+    test('unknown push mode is rejected instead of activating a service', () {
+      expect(
+        () => AppConfig.fromEnvironment(
+          productionBuild: false,
+          values: const {'PUSH_MODE': 'unknown'},
+        ),
+        throwsA(isA<AppConfigException>()),
+      );
     });
 
     test('production requires an explicit BASE_URL', () {

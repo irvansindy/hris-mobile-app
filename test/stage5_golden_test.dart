@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hrm_app/core/localization/app_localizations.dart';
 import 'package:hrm_app/core/theme/app_theme.dart';
 import 'package:hrm_app/core/widgets/app_state_view.dart';
 import 'package:hrm_app/features/authentication/authentication_providers.dart';
@@ -98,7 +98,7 @@ void main() {
                 ),
                 locale: const Locale('id', 'ID'),
                 supportedLocales: const [Locale('id', 'ID')],
-                localizationsDelegates: GlobalMaterialLocalizations.delegates,
+                localizationsDelegates: appLocalizationsDelegates,
                 builder: (context, child) => MediaQuery(
                   data: MediaQuery.of(context).copyWith(
                     padding: const EdgeInsets.only(top: 30, bottom: 20),

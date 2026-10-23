@@ -56,12 +56,76 @@ flutter analyze
 flutter test
 ```
 
+Native JUnit regression (run from `android/` with the Android SDK configured):
+
+```bash
+rtk proxy ./gradlew :app:verifyDependencySafety -I ../tool/verify_android_dependencies.gradle
+```
+
+This resolves debug/profile/release graphs, rejects unpatched JUnit, and checks
+that JUnit is absent from release. It is not a full vulnerability scan. See the
+[native dependency audit](<docs/Report QA-03 Audit Dependency Native - 2026-10-20.md>)
+for OSV results and remaining iOS/binary checks.
+
+After an Android App Bundle build, verify pinned PDFium bytes before uploading:
+
+```bash
+rtk dart --packages=.dart_tool/package_config.json tool/verify_native_pdfium.dart
+```
+
+Requires `unzip` and `shasum` on PATH (`zip` is also needed by the verifier tests).
+The command checks the three Android hook-cache libraries and the AAB, rejects
+missing/duplicate/unknown binaries or package-version changes, and returns a
+nonzero exit code on failure. Android CI runs it after build and before upload.
+An optional positional argument selects another AAB; there is no baseline-update
+or skip flag. Update the pinned hashes only through a reviewed provenance audit.
+Direct script execution avoids running package build hooks inside the verifier.
+This is a post-build integrity gate, not pre-extraction download verification,
+an iOS gate, or native vulnerability clearance. See the
+[provenance audit](<docs/Report QA-03 Provenance Binary Native - 2026-10-21.md>).
+
 Authentication and attendance use the configured HRMS API. Other modules keep
 replaceable local adapters until their response schemas are finalized.
 
 Authentication is connected to the HRMS reference API configured by
 `BASE_URL`. The repository's HTTP endpoint is a development-only fallback and
 cannot start a release/profile build.
+
+## Local push simulator
+
+```bash
+rtk flutter run --dart-define=DEMO_MODE=true
+rtk flutter run --dart-define-from-file=.env --dart-define=PUSH_MODE=dummy
+```
+
+The second command uses server repositories with local push simulation and
+requires a valid login. Dummy registration stays local; it does not send sample
+tokens to the API or test Firebase/APNs delivery. `PUSH_MODE` defaults to
+`disabled`; dummy is debug-only and rejected in profile/release builds.
+
+See [local verification report](docs/Tahap%206%20Push%20Notification%20dan%20Deep%20Link.md)
+and [pending live acceptance](docs/Tahap%206%20Acceptance%20Push%20Live%20Tertunda.md).
+Production Firebase/APNs configuration remains pending; local success is not release approval.
+
+## Android development Firebase
+
+Place the development Android client configuration at
+`android/app/src/debug/google-services.json` (gitignored). It must match the
+temporary package `com.example.hrm_app`. Do not put service-account credentials
+or Firebase server keys in the app or `.env`.
+
+```bash
+rtk flutter run --dart-define-from-file=.env --dart-define=APP_ENV=development --dart-define=DEMO_MODE=false --dart-define=PUSH_MODE=firebase --dart-define=ENABLE_LOGGING=false
+```
+
+This mode uses real FCM only on Android development debug. Registration remains
+Console-only: the token is never sent to the HRIS backend, including its HTTP
+endpoint. After employee login, open Notifications and use the debug panel to
+activate permission and explicitly copy the token for a Firebase Console test.
+Foreground messages refresh the inbox; there is no foreground OS banner.
+Demo continues to use dummy push. Profile/release Firebase builds are rejected.
+
+See [development setup and test report](docs/Firebase%20Android%20Development.md).
 
 ## Flutter resources
 

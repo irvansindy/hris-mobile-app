@@ -25,6 +25,8 @@ import 'package:hrm_app/features/authentication/presentation/screens/session_spl
 import 'package:hrm_app/features/calendar/presentation/screens/calendar_screen.dart';
 import 'package:hrm_app/features/ess/presentation/screens/ess_screen.dart';
 import 'package:hrm_app/features/profile/presentation/screens/profile_screen.dart';
+import 'package:hrm_app/features/payroll/presentation/screens/payroll_screen.dart';
+import 'package:hrm_app/features/payroll/presentation/screens/payslip_detail_screen.dart';
 import 'package:hrm_app/features/self_service/presentation/screens/requests_screen.dart';
 import 'package:hrm_app/features/self_service/presentation/screens/request_form_screen.dart';
 import 'package:hrm_app/features/self_service/domain/entities/employee_request.dart';
@@ -32,7 +34,10 @@ import 'package:hrm_app/features/self_service/domain/entities/employee_request.d
 final appRouterProvider = Provider<GoRouter>((ref) {
   ref.watch(featureSessionProvider);
   final refresh = _RouterRefresh();
-  ref.listen(authControllerProvider, (_, _) => refresh.notify());
+  var alive = true;
+  final authSubscription = ref.listen(authControllerProvider, (_, _) {
+    if (alive) refresh.notify();
+  });
 
   final rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
   final scrollControllers = List.generate(4, (_) => ScrollController());
@@ -74,6 +79,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) => MainShell(
           navigationShell: navigationShell,
+          isBranchRoot: state.uri.path != '/requests',
           themeMode: ref.read(themeControllerProvider),
           onThemeToggle: () =>
               ref.read(themeControllerProvider.notifier).toggle(),
@@ -116,6 +122,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   ),
                 ),
               ),
+              GoRoute(
+                path: '/requests',
+                builder: (_, _) => const RequestsScreen(),
+              ),
             ],
           ),
           StatefulShellBranch(
@@ -155,6 +165,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                         ref.read(themeControllerProvider) == ThemeMode.dark,
                     onOpenAccountSecurity: () =>
                         context.push('/profile/security'),
+                    onOpenPayroll: () => context.push('/payroll'),
                   ),
                 ),
               ),
@@ -162,7 +173,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      GoRoute(path: '/requests', builder: (_, _) => const RequestsScreen()),
       GoRoute(
         path: '/ess',
         builder: (_, state) {
@@ -220,6 +230,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               ref.read(authControllerProvider.notifier).logout(),
         ),
       ),
+      GoRoute(path: '/payroll', builder: (_, _) => const PayrollScreen()),
+      GoRoute(
+        path: '/payroll/:id',
+        builder: (_, state) =>
+            PayslipDetailScreen(id: state.pathParameters['id']!),
+      ),
       GoRoute(
         path: '/requests/leave/new',
         builder: (_, _) => const RequestFormScreen(kind: RequestKind.leave),
@@ -241,6 +257,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
   ref.onDispose(() {
+    alive = false;
+    authSubscription.close();
     router.dispose();
     refresh.dispose();
     for (final controller in scrollControllers) {

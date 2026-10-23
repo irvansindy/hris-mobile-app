@@ -25,6 +25,8 @@ import 'package:hrm_app/features/profile/domain/entities/employee.dart';
 import 'package:hrm_app/features/profile/domain/repositories/profile_repository.dart';
 import 'package:hrm_app/features/profile/presentation/screens/profile_screen.dart';
 import 'package:hrm_app/features/profile/profile_dependencies.dart';
+import 'package:hrm_app/features/profile/domain/entities/employee_support.dart';
+import 'package:hrm_app/features/profile/domain/repositories/employee_support_repository.dart';
 import 'package:hrm_app/features/self_service/data/datasources/request_local_datasource.dart';
 import 'package:hrm_app/features/self_service/domain/entities/request_command.dart';
 import 'package:hrm_app/features/self_service/domain/entities/employee_request.dart';
@@ -110,6 +112,8 @@ void main() {
     expect(find.text('Belum diverifikasi'), findsWidgets);
     expect(find.text('Belum masuk'), findsOneWidget);
     expect(find.text('Catat masuk'), findsOneWidget);
+    expect(find.text('Ringkasan'), findsOneWidget);
+    expect(find.text('Rata-rata masuk'), findsOneWidget);
     expect(find.text('GPS Active'), findsNothing);
     expect(find.text('Identity confirmed'), findsNothing);
     expect(find.text('Menara ACME, Jl. Sudirman 42'), findsNothing);
@@ -142,6 +146,15 @@ void main() {
     expect(find.text('Belum ada pengajuan'), findsOneWidget);
     expect(find.text('Submit Request'), findsNothing);
     expect(find.text('Buat Pengajuan'), findsOneWidget);
+    expect(find.byKey(const ValueKey('request-filter-Semua')), findsOneWidget);
+    expect(find.byKey(const ValueKey('request-filter-Cuti')), findsOneWidget);
+    expect(find.byKey(const ValueKey('request-filter-Lembur')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('request-filter-Reimburse')),
+      findsOneWidget,
+    );
+    expect(find.text('Layanan Employee'), findsNothing);
+    expect(find.text('Sebelumnya'), findsNothing);
 
     await tester.pumpWidget(
       ProviderScope(
@@ -165,6 +178,9 @@ void main() {
           overrides: [
             profileRepositoryProvider.overrideWithValue(
               const _ProfileRepository(_employee),
+            ),
+            employeeSupportRepositoryProvider.overrideWithValue(
+              const _EmptyEmployeeSupport(),
             ),
           ],
           child: MaterialApp(
@@ -427,6 +443,20 @@ void main() {
       );
     }
   }
+}
+
+class _EmptyEmployeeSupport implements EmployeeSupportRepository {
+  const _EmptyEmployeeSupport();
+
+  @override
+  Future<EmployeeSupportSnapshot> load() async => const EmployeeSupportSnapshot(
+    reportingLine: ReportingLine(
+      source: 'POSITION_REPORTS_TO',
+      alternateSupervisors: [],
+    ),
+    attachments: [],
+    canReadAttachments: true,
+  );
 }
 
 const _unavailableDashboard = DashboardSnapshot(

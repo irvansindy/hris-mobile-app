@@ -38,15 +38,25 @@ class SessionLifecycle extends ChangeNotifier {
 
 final featureSessionProvider = Provider<FeatureSession>((ref) {
   final lifecycle = ref.watch(sessionLifecycleProvider);
+  final contextState = ref.read(requestContextProvider.notifier);
   final context = ref.watch(requestContextProvider);
   final session = FeatureSession(
     context,
     lifecycle,
-    () => identical(ref.read(requestContextProvider), context),
+    () => _sameFeatureIdentity(contextState.state, context),
   );
-  ref.onDispose(session.dispose);
+  ref.onDispose(() {
+    if (!_sameFeatureIdentity(contextState.state, context)) {
+      session.dispose();
+    }
+  });
   return session;
 });
+
+bool _sameFeatureIdentity(RequestContext? current, RequestContext? previous) =>
+    current?.userId == previous?.userId &&
+    current?.employeeId == previous?.employeeId &&
+    current?.activeCompanyId == previous?.activeCompanyId;
 
 class FeatureSession {
   FeatureSession(this.context, this._lifecycle, this._sameContext)

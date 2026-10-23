@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: 2553f89be1efa62eeb7b3aeea68fc9f80336ee54
+  FLUTTER_VERSION: 19946f91c8d9de18a4674460d015229cc0b2534f
 
 jobs:
   quality:
@@ -51,6 +51,7 @@ jobs:
           flutter test
           test/core/app_config_test.dart
           test/core/transport_configuration_test.dart
+          test/core/platform_backup_policy_test.dart
           test/features/safety/no_demo_ui_test.dart
 
       - name: Run test suite with coverage
@@ -78,7 +79,7 @@ jobs:
     name: Validate Android production build
     needs: quality
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
 
     steps:
       - name: Check out source
@@ -108,6 +109,9 @@ jobs:
           --dart-define=BASE_URL=https://ci.invalid/api/v1
           --dart-define=ENABLE_LOGGING=false
 
+      - name: Verify native PDFium integrity
+        run: dart --packages=.dart_tool/package_config.json tool/verify_native_pdfium.dart
+
       - name: Upload Android artifact
         uses: actions/upload-artifact@v7
         with:
@@ -115,6 +119,21 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 14
+
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android fixture integration tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: flutter test integration_test/redesign_flow_test.dart -d emulator-5554
 
   ios:
     name: Validate iOS production build without signing

@@ -25,4 +25,10 @@ abstract interface class EssRepository {
   Future<BusinessTrip> createTrip(CreateTripCommand command);
   Future<ReceiptUpload> uploadReceipt(ReceiptFile file);
   Future<ExpenseClaim> createClaim(CreateClaimCommand command);
+
+  Future<AssetPage> getAssets({
+    int page = 1,
+    int limit = 20,
+    AssetAssignmentStatus status = AssetAssignmentStatus.active,
+  });
 }

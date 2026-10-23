@@ -50,8 +50,7 @@ class _AttendanceRequestsScreenState
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(featureSessionProvider);
-    final permissions =
-        ref.watch(requestContextProvider)?.permissions ?? const [];
+    final requestContext = ref.watch(requestContextProvider);
     final query = AttendanceRequestQuery(
       session: session,
       status: _pendingOnly ? 'PENDING' : null,
@@ -100,7 +99,7 @@ class _AttendanceRequestsScreenState
               const SizedBox(height: AppSpacing.lg),
               Align(
                 alignment: Alignment.centerRight,
-                child: _createButton(permissions),
+                child: _createButton(requestContext),
               ),
               const SizedBox(height: AppSpacing.lg),
               if (_tab == AttendanceRequestTab.correction)
@@ -115,7 +114,7 @@ class _AttendanceRequestsScreenState
                   state: ref.watch(overtimeRequestsProvider(query)),
                   onRetry: () =>
                       ref.invalidate(overtimeRequestsProvider(query)),
-                  onOpen: (item) => _showOvertimeDetail(item, permissions),
+                  onOpen: (item) => _showOvertimeDetail(item, requestContext),
                 ),
             ],
           ),
@@ -124,9 +123,9 @@ class _AttendanceRequestsScreenState
     );
   }
 
-  Widget _createButton(List<String> permissions) {
+  Widget _createButton(RequestContext? requestContext) {
     if (_tab == AttendanceRequestTab.overtime &&
-        !permissions.contains('attendance:create')) {
+        requestContext?.hasPermission('attendance:create') != true) {
       return const SizedBox.shrink();
     }
     return FilledButton.icon(
@@ -195,9 +194,15 @@ class _AttendanceRequestsScreenState
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_errorMessage(error))));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_errorMessage(error)),
+          action: SnackBarAction(
+            label: 'Coba lagi',
+            onPressed: () => _submitCorrection(command),
+          ),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -216,9 +221,15 @@ class _AttendanceRequestsScreenState
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_errorMessage(error))));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_errorMessage(error)),
+          action: SnackBarAction(
+            label: 'Coba lagi',
+            onPressed: () => _submitOvertime(command),
+          ),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -236,7 +247,7 @@ class _AttendanceRequestsScreenState
 
   Future<void> _showOvertimeDetail(
     OvertimeRequest item,
-    List<String> permissions,
+    RequestContext? requestContext,
   ) => showModalBottomSheet<void>(
     context: context,
     useSafeArea: true,
@@ -245,7 +256,7 @@ class _AttendanceRequestsScreenState
     sheetAnimationStyle: AppMotion.sheetStyleOf(context),
     builder: (_) => _OvertimeDetail(
       item: item,
-      canReadPay: permissions.contains('attendance:read'),
+      canReadPay: requestContext?.hasPermission('attendance:read') == true,
     ),
   );
 }
@@ -428,6 +439,8 @@ class _CorrectionFormState extends State<_CorrectionForm> {
   late DateTime? _checkOut = widget.initialAttendance?.checkedOutAt;
   late bool _changeCheckIn = widget.initialAttendance?.checkedInAt != null;
   late bool _changeCheckOut = widget.initialAttendance?.checkedOutAt != null;
+  late bool _checkOutNextDay =
+      _checkOut != null && !DateUtils.isSameDay(_date, _checkOut!);
 
   @override
   void dispose() {
@@ -498,6 +511,20 @@ class _CorrectionFormState extends State<_CorrectionForm> {
               label: 'Pulang: ${_time(_checkOut)}',
               onPressed: () => _pickTime(checkIn: false),
             ),
+          if (_changeCheckOut)
+            SwitchListTile.adaptive(
+              key: const ValueKey('correction-check-out-next-day'),
+              value: _checkOutNextDay,
+              onChanged: (value) => setState(() {
+                _checkOutNextDay = value;
+                final time = TimeOfDay.fromDateTime(
+                  _checkOut ?? _at(_date, const TimeOfDay(hour: 17, minute: 0)),
+                );
+                _checkOut = _at(_checkOutDate, time);
+              }),
+              title: const Text('Pulang hari berikutnya'),
+              contentPadding: EdgeInsets.zero,
+            ),
           const SizedBox(height: AppSpacing.md),
           TextFormField(
             key: const ValueKey('correction-reason'),
@@ -539,7 +566,7 @@ class _CorrectionFormState extends State<_CorrectionForm> {
         _checkIn = _at(value, TimeOfDay.fromDateTime(_checkIn!));
       }
       if (_checkOut != null) {
-        _checkOut = _at(value, TimeOfDay.fromDateTime(_checkOut!));
+        _checkOut = _at(_checkOutDate, TimeOfDay.fromDateTime(_checkOut!));
       }
     });
   }
@@ -557,10 +584,13 @@ class _CorrectionFormState extends State<_CorrectionForm> {
       if (checkIn) {
         _checkIn = _at(_date, value);
       } else {
-        _checkOut = _at(_date, value);
+        _checkOut = _at(_checkOutDate, value);
       }
     });
   }
+
+  DateTime get _checkOutDate =>
+      _checkOutNextDay ? _date.add(const Duration(days: 1)) : _date;
 
   void _submit() {
     if (_formKey.currentState?.validate() != true) return;
