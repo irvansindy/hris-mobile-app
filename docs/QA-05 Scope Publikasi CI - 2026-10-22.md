@@ -78,3 +78,24 @@ Ini tetap bukan audit keamanan lengkap.
 Scope commit/push/PR ke `origin` sudah disetujui pengguna. Tidak melakukan merge
 otomatis. QA-05 belum DONE sampai bukti run untuk commit publikasi diverifikasi;
 hasil lokal tidak menutup gate iOS atau release lain.
+
+## Hasil publikasi dan hambatan PR
+
+Commit integrasi `e883d61f4da3c57d9a26654eedebde1d55b320cc` berhasil dipush
+ke `origin/qa/remote-ci-baseline-2026-10-22`. Worktree bersih sesudah commit.
+Delapan PNG sudah tidak tracked; pemeriksaan SHA-256 sesudah operasi membuktikan
+file lokal tetap sama. Tidak memodifikasi golden acuan atau menghapus file lokal.
+
+Pembuatan PR melalui integrasi GitHub gagal dengan HTTP 403:
+`Resource not accessible by integration`. Tidak ada PR terbuka yang ditemukan
+untuk branch tersebut. Pemeriksaan run pada SHA integrasi mengembalikan nol run.
+Workflow hanya terpicu oleh PR atau push ke `master`/`main`; push ke branch QA
+sendiri belum menjalankan CI. Tidak menambahkan bypass trigger atau mengubah
+permission workflow/akun untuk mengatasi pembatasan integrasi.
+
+**PENDING tindakan pengguna:**
+[buat PR dari branch QA ke master](https://github.com/irvansindy/hris-mobile-app/compare/master...qa/remote-ci-baseline-2026-10-22?expand=1)
+melalui browser, atau berikan integrasi GitHub izin pull request write pada
+repository ini. Jangan mengirim token/password di chat. Setelah PR tersedia,
+lanjutkan pemantauan quality, Android dan iOS; QA-05 belum dinyatakan PASS.
+Tidak melakukan merge, force-push atau push ke remote `draft`.
