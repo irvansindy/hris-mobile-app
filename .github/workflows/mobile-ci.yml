@@ -109,6 +109,9 @@ jobs:
           --dart-define=BASE_URL=https://ci.invalid/api/v1
           --dart-define=ENABLE_LOGGING=false
 
+      - name: Verify native PDFium integrity
+        run: dart --packages=.dart_tool/package_config.json tool/verify_native_pdfium.dart
+
       - name: Upload Android artifact
         uses: actions/upload-artifact@v7
         with:

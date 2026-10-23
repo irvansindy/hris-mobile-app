@@ -6,7 +6,14 @@ import 'package:hrm_app/features/notifications/push/push_adapter.dart';
 import 'package:hrm_app/features/notifications/push/push_registration.dart';
 import 'package:uuid/uuid.dart';
 
-enum PushStatus { disabled, denied, registering, simulated, failed }
+enum PushStatus {
+  disabled,
+  denied,
+  registering,
+  simulated,
+  consoleReady,
+  failed,
+}
 
 class PushCoordinator {
   PushCoordinator({
@@ -166,7 +173,11 @@ class PushCoordinator {
         return;
       }
       if (_registeredToken == token) {
-        _setStatus(PushStatus.simulated);
+        _setStatus(
+          mode == PushMode.firebase
+              ? PushStatus.consoleReady
+              : PushStatus.simulated,
+        );
         return;
       }
       if (_command?.token != token) {
@@ -186,7 +197,11 @@ class PushCoordinator {
       final latest = await adapter.getToken().timeout(_timeout);
       if (!_current(generation)) return;
       if (latest == token) {
-        _setStatus(PushStatus.simulated);
+        _setStatus(
+          mode == PushMode.firebase
+              ? PushStatus.consoleReady
+              : PushStatus.simulated,
+        );
         return;
       }
     }

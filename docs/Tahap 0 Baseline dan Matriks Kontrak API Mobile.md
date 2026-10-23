@@ -3,6 +3,11 @@
 Tanggal audit: 5 Oktober 2026  
 Status: **SELESAI lokal, menunggu keputusan backend**
 
+Addendum 18 Oktober 2026 tersedia pada
+[Matriks Migrasi API Oktober](<Migrasi API Oktober 2026 - Matriks dan Report.md>).
+Matriks dan fingerprint di bawah tetap merupakan snapshot historis 5 Oktober;
+jangan memakai status NI/P lama sebagai status implementasi terkini.
+
 ## 1. Baseline yang Dibekukan
 
 | Artefak | SHA-256 |

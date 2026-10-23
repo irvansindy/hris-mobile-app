@@ -10,6 +10,15 @@
 
 **Spec:** `docs/api-for-mobile-apps/README.md`, `docs/api-for-mobile-apps/openapi.yaml`, dan `docs/api-for-mobile-apps/checklist-perubahan-api.md`.
 
+**Addendum API 18 Oktober 2026:** kompatibilitas password gate, identity tenant,
+multi-payslip, carry-over, permission, dan tracing mengikuti
+[Matriks Migrasi Oktober](<Migrasi API Oktober 2026 - Matriks dan Report.md>).
+Path daftar payslip masih membutuhkan konfirmasi backend. Keputusan pengguna
+19 Oktober 2026: helpdesk, feed/kudos, dan timesheet ditunda dari rilis awal.
+Keputusan scope poin 7 selesai; implementasi ketiganya tetap backlog setelah
+rilis awal, bukan syarat exit gate rilis ini. Gate modul yang sudah masuk
+scope tetap berlaku. Detail: [Pending dan deferred Oktober](<Pending Task Migrasi API Oktober 2026.md>).
+
 ## Global Constraints
 
 - Production wajib memakai HTTPS; HTTP hanya boleh untuk development environment yang disetujui.
@@ -20,6 +29,11 @@
 - Setiap tahap wajib lulus format, analyzer, test terkait, dan review perubahan.
 
 ## Status Awal
+
+Untuk snapshot sisa pekerjaan lintas tahap per 19 Oktober 2026, gunakan
+[Rekap Seluruh Task Belum Selesai](<Rekap Seluruh Task Belum Selesai - 2026-10-19.md>).
+Dokumen tersebut mempertahankan nomor tahap di sini dan memisahkan TODO,
+PENDING, DEFERRED, serta scope bersyarat dari bukti historis yang sudah selesai.
 
 - Shared presentation demo/production dan baseline UI sudah diterapkan, tetapi harus diregresikan setelah penyesuaian kontrak terbaru.
 - CI, golden, dan virtual-device acceptance sebelumnya telah dikerjakan; hasilnya bukan bukti release setelah perubahan berikutnya.
@@ -185,6 +199,11 @@ Gate tertunda: [Tahap 7 Acceptance Release Gate Tertunda](Tahap%207%20Acceptance
 ## Tahap 8 — Konfigurasi Staging dan Production (P0, External Gate)
 
 **Owner:** Backend + DevOps + Mobile
+
+Development Android memakai Firebase pribadi dan package sementara
+`com.example.hrm_app`, dengan registrasi Console-only. Ini tidak menutup gate
+Firebase per flavor, APNs, signing, atau delivery live. Detail:
+[Firebase Android Development](Firebase%20Android%20Development.md).
 
 - [ ] Sediakan HTTPS staging dan production base URL dengan sertifikat valid.
 - [ ] Tetapkan application ID/package name dan iOS bundle identifier final per flavor.

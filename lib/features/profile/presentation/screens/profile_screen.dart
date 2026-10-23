@@ -36,7 +36,7 @@ class ProfileScreen extends ConsumerWidget {
     final version = ref.watch(appVersionProvider);
     final darkMode = Theme.of(context).brightness == Brightness.dark;
     final identity = [
-      employee.id,
+      employee.employeeNumber ?? employee.id,
       employee.department,
       employee.location,
     ].where((value) => value.trim().isNotEmpty).toList(growable: false);

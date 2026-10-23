@@ -279,6 +279,7 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
   Future<void> _showPermissionDetail(EmployeeRequest item) =>
       showModalBottomSheet<void>(
         context: context,
+        useRootNavigator: true,
         useSafeArea: true,
         sheetAnimationStyle: AppMotion.sheetStyleOf(context),
         showDragHandle: true,
@@ -289,63 +290,69 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
         ),
       );
 
-  Future<void> _showCreateMenu(bool canCreateLeave, bool canCreateOvertime) =>
-      showModalBottomSheet<void>(
-        context: context,
-        useSafeArea: true,
-        sheetAnimationStyle: AppMotion.sheetStyleOf(context),
-        showDragHandle: true,
-        builder: (sheetContext) => SafeArea(
-          minimum: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Pilih jenis pengajuan',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 16),
-              if (canCreateLeave)
-                ListTile(
-                  leading: const AppIconTile(icon: Icons.beach_access_outlined),
-                  title: const Text('Cuti'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    context.push('/requests/leave/new');
-                  },
-                ),
+  Future<void> _showCreateMenu(
+    bool canCreateLeave,
+    bool canCreateOvertime,
+  ) => showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    sheetAnimationStyle: AppMotion.sheetStyleOf(context),
+    showDragHandle: true,
+    builder: (sheetContext) => SafeArea(
+      minimum: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Pilih jenis pengajuan',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            if (canCreateLeave)
               ListTile(
-                leading: const AppIconTile(icon: Icons.description_outlined),
-                title: const Text('Izin'),
+                leading: const AppIconTile(icon: Icons.beach_access_outlined),
+                title: const Text('Cuti'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  context.push('/requests/permission/new');
+                  context.push('/requests/leave/new');
                 },
               ),
+            ListTile(
+              leading: const AppIconTile(icon: Icons.description_outlined),
+              title: const Text('Izin'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                context.push('/requests/permission/new');
+              },
+            ),
+            ListTile(
+              leading: const AppIconTile(icon: Icons.edit_calendar_outlined),
+              title: const Text('Koreksi absensi'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                context.push('/attendance/requests?compose=true');
+              },
+            ),
+            if (canCreateOvertime)
               ListTile(
-                leading: const AppIconTile(icon: Icons.edit_calendar_outlined),
-                title: const Text('Koreksi absensi'),
+                leading: const AppIconTile(icon: Icons.more_time_rounded),
+                title: const Text('Lembur'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  context.push('/attendance/requests?compose=true');
+                  context.push(
+                    '/attendance/requests?tab=overtime&compose=true',
+                  );
                 },
               ),
-              if (canCreateOvertime)
-                ListTile(
-                  leading: const AppIconTile(icon: Icons.more_time_rounded),
-                  title: const Text('Lembur'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    context.push(
-                      '/attendance/requests?tab=overtime&compose=true',
-                    );
-                  },
-                ),
-            ],
-          ),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _RequestFilterPill extends StatelessWidget {

@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 enum AppEnvironment { development, production }
 
-enum PushMode { disabled, dummy }
+enum PushMode { disabled, dummy, firebase }
 
 class AppConfigException implements Exception {
   const AppConfigException(this.message);
@@ -92,6 +92,7 @@ class AppConfig {
       pushMode: _parsePushMode(
         _value(values, 'PUSH_MODE', _definedPushMode) ?? 'disabled',
         productionBuild: isProductionBuild,
+        environment: environment,
       ),
     );
   }
@@ -104,12 +105,25 @@ class AppConfig {
   final PushMode pushMode;
 }
 
-PushMode _parsePushMode(String value, {required bool productionBuild}) {
+PushMode _parsePushMode(
+  String value, {
+  required bool productionBuild,
+  required AppEnvironment environment,
+}) {
   final mode = switch (value.toLowerCase()) {
     'disabled' => PushMode.disabled,
     'dummy' => PushMode.dummy,
-    _ => throw const AppConfigException('PUSH_MODE harus disabled atau dummy.'),
+    'firebase' => PushMode.firebase,
+    _ => throw const AppConfigException(
+      'PUSH_MODE harus disabled, dummy, atau firebase.',
+    ),
   };
+  if (mode == PushMode.firebase &&
+      (productionBuild || environment != AppEnvironment.development)) {
+    throw const AppConfigException(
+      'PUSH_MODE=firebase sementara hanya tersedia pada development debug Android.',
+    );
+  }
   if (productionBuild && mode == PushMode.dummy) {
     throw const AppConfigException(
       'PUSH_MODE=dummy hanya tersedia pada build debug.',

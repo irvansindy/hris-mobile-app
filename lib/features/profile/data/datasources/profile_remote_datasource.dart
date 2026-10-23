@@ -84,9 +84,8 @@ class DioProfileRemoteDataSource implements ProfileRemoteDataSource {
         _text(json, const ['workLocation', 'locationName']) ??
         fallback.location;
     return Employee(
-      id:
-          _text(json, const ['employeeNumber', 'employee_number', 'id']) ??
-          fallback.id,
+      id: context.employeeId!,
+      employeeNumber: _text(json, const ['employeeNumber', 'employee_number']),
       name: name,
       role: role,
       department: department,

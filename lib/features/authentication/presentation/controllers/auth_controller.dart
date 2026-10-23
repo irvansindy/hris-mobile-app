@@ -5,6 +5,7 @@ import 'package:hrm_app/core/errors/failure.dart';
 import 'package:hrm_app/core/errors/result.dart';
 import 'package:hrm_app/core/network/dio_client.dart';
 import 'package:hrm_app/core/network/request_context.dart';
+import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/features/authentication/authentication_dependencies.dart';
 import 'package:hrm_app/features/authentication/domain/entities/auth_session.dart';
 
@@ -17,6 +18,17 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   Future<AuthSession?> build() async {
     _disposed = false;
     final operation = ++_operation;
+    ref.listen<int?>(passwordChangeRequiredRevisionProvider, (_, revision) {
+      if (_disposed ||
+          revision == null ||
+          !ref.read(sessionLifecycleProvider).isCurrent(revision)) {
+        return;
+      }
+      final session = _currentSession;
+      if (session == null) return;
+      ref.read(loginSuccessPendingProvider.notifier).state = false;
+      state = AsyncData(_setContext(session.requiringPasswordChange()));
+    });
     ref.listen<int>(sessionInvalidationProvider, (previous, next) {
       if (previous == null || previous == next) return;
       _operation++;
@@ -31,7 +43,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     ) {
       if (refreshed == null || _disposed) return;
       final currentUserId = _currentSession?.userId;
-      if (currentUserId != null && refreshed.userId != currentUserId) return;
+      if (currentUserId == null || refreshed.userId != currentUserId) return;
       state = AsyncData(_setContext(refreshed));
     });
     ref.onDispose(() {
@@ -116,6 +128,11 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   }
 
   AuthSession? _setContext(AuthSession? session) {
+    if (session != null &&
+        ref.read(passwordChangeRequiredRevisionProvider) ==
+            ref.read(sessionLifecycleProvider).revision) {
+      session = session.requiringPasswordChange();
+    }
     _currentSession = session;
     if (session == null) {
       ref.read(requestContextProvider.notifier).state = null;

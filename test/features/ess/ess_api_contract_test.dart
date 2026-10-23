@@ -238,6 +238,7 @@ void main() {
       });
       expect(request.queryParameters, isNot(contains('employeeId')));
       expect(result.items.single.name, 'Laptop operasional');
+      expect(result.items.single.condition, 'Bekas ringan, masih layak');
       expect(result.hasNextPage, isTrue);
     },
   );
@@ -406,7 +407,7 @@ class _EssAdapter implements HttpClientAdapter {
         'id': 'assignment-1',
         ..._identity(),
         'assignedAt': '2026-01-15T00:00:00.000Z',
-        'conditionAtAssignment': 'GOOD',
+        'conditionAtAssign': 'Bekas ringan, masih layak',
         'asset': {
           'id': 'asset-1',
           'assetCode': 'AST-001',

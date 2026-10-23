@@ -596,10 +596,39 @@ class _LeaveBalanceCard extends StatelessWidget {
             '$remaining dari ${active.total} hari tersisa${active.note == null ? '' : ' · ${active.note}'}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          if (active.carryOverDays > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              _carryOverNote(active),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+String _carryOverNote(LeaveBalance balance) {
+  final days = balance.carryOverDays;
+  final count = days == days.truncateToDouble() ? '${days.toInt()}' : '$days';
+  final expiry = balance.carryOverExpiredAt;
+  if (expiry == null) return 'Cuti bawaan: $count hari';
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'Mei',
+    'Jun',
+    'Jul',
+    'Agu',
+    'Sep',
+    'Okt',
+    'Nov',
+    'Des',
+  ];
+  return 'Cuti bawaan: $count hari · Batas berlaku ${expiry.day} ${months[expiry.month - 1]} ${expiry.year}';
 }
 
 class _UnavailableHomeCard extends StatelessWidget {

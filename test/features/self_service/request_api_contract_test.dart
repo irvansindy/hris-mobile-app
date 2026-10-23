@@ -16,6 +16,20 @@ void main() {
     companyScope: ['company-1'],
     permissions: ['leave:read', 'leave:create'],
   );
+  test(
+    'unknown request status stays readable without becoming pending',
+    () async {
+      final dio = Dio()
+        ..httpClientAdapter = _RequestAdapter(defect: 'future-enum');
+      addTearDown(dio.close);
+      final page = await DioRequestRemoteDataSource(
+        dio,
+        () => context,
+      ).getPage(kind: RequestKind.leave, page: 1, limit: 20);
+      expect(page.items.single.status, RequestStatus.unknown);
+      expect(page.items.single.id, 'leave-1');
+    },
+  );
 
   test('leave list uses self context without invented pagination', () async {
     final adapter = _RequestAdapter();
@@ -330,7 +344,11 @@ class _RequestAdapter implements HttpClientAdapter {
       'startDate': '2026-09-21',
       'endDate': '2026-09-22',
       'reason': 'Keperluan keluarga',
-      'status': options.path.endsWith('/cancel') ? 'CANCELLED' : 'PENDING',
+      'status': defect == 'future-enum'
+          ? 'FUTURE_STATUS'
+          : options.path.endsWith('/cancel')
+          ? 'CANCELLED'
+          : 'PENDING',
       'createdAt': '2026-09-14T01:00:00.000Z',
     };
     final Object data = switch ((options.method, options.path)) {

@@ -1,5 +1,3 @@
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hrm_app/core/face_id/face_id_providers.dart';
 import 'package:hrm_app/core/network/dio_client.dart';
@@ -56,9 +54,6 @@ final sessionArtifactCleanerProvider = Provider<SessionArtifactCleaner>((ref) {
           faceTemplate.delete(employeeId: employeeId, companyId: companyId),
         ),
       ]);
-    }
-    if (Firebase.apps.isNotEmpty) {
-      await _bestEffort(FirebaseMessaging.instance.deleteToken());
     }
   };
 });

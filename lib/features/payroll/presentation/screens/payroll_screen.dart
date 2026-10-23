@@ -108,7 +108,11 @@ class _PayrollScreenState extends ConsumerState<PayrollScreen> {
       children: [
         const AppSectionLabel('Riwayat slip gaji'),
         for (final summary in state.summaries) ...[
-          _SummaryCard(summary: summary, onTap: () => _open(summary)),
+          _SummaryCard(
+            key: ValueKey(summary.id),
+            summary: summary,
+            onTap: () => _open(summary),
+          ),
           const SizedBox(height: AppSpacing.sm),
         ],
       ],
@@ -229,7 +233,7 @@ class _SecurityNote extends StatelessWidget {
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.summary, required this.onTap});
+  const _SummaryCard({super.key, required this.summary, required this.onTap});
 
   final PayslipSummary summary;
   final VoidCallback onTap;
@@ -252,6 +256,14 @@ class _SummaryCard extends StatelessWidget {
                   _period(summary),
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
+                if (summary.runName != null || summary.runNumber != null)
+                  Text(
+                    [
+                      summary.runName,
+                      summary.runNumber,
+                    ].whereType<String>().join(' · '),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
                   summary.payDate == null

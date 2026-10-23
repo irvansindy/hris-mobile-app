@@ -17,6 +17,29 @@ void main() {
     permissions: ['workflow:approve'],
   );
 
+  for (final status in [403, 409]) {
+    test(
+      'workflow $status rejection is not retried through a legacy approval endpoint',
+      () async {
+        final adapter = _ApprovalAdapter(defect: 'action-$status');
+        final dio = Dio()..httpClientAdapter = adapter;
+        addTearDown(dio.close);
+        await expectLater(
+          DioApprovalRemoteDataSource(dio, () => approverContext).applyAction(
+            instanceId: 'instance-1',
+            action: WorkflowApprovalAction.approve,
+          ),
+          throwsA(
+            isA<ApiException>().having((e) => e.statusCode, 'status', status),
+          ),
+        );
+        expect(adapter.requests.map((r) => r.path), [
+          '/workflow-engine/instances/instance-1/actions',
+        ]);
+      },
+    );
+  }
+
   test(
     'approval queue uses approver endpoint and strict tenant context',
     () async {
@@ -329,6 +352,19 @@ class _ApprovalAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     requests.add(options);
+    if (defect == 'action-403' || defect == 'action-409') {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': false,
+          'code': defect == 'action-403' ? 'FORBIDDEN' : 'CONFLICT',
+          'message': 'Approval chain rejected this action',
+        }),
+        defect == 'action-403' ? 403 : 409,
+        headers: {
+          Headers.contentTypeHeader: ['application/json'],
+        },
+      );
+    }
     final Object? data = switch ((options.method, options.path)) {
       ('GET', '/workflow-engine/instances/my-approvals') => [_approval()],
       ('GET', '/workflow-engine/instances/instance-1') => _instance(),

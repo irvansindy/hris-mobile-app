@@ -134,6 +134,8 @@ class DioDashboardRemoteDataSource implements DashboardRemoteDataSource {
             total: total,
             used: used,
             colorIndex: index % 4,
+            carryOverDays: _carryOverDays(item['carryOverDays']),
+            carryOverExpiredAt: _carryOverExpiry(item['carryOverExpiredAt']),
           );
         })
         .toList(growable: false);
@@ -212,6 +214,24 @@ int _integer(Map<dynamic, dynamic> map, List<String> keys, {int fallback = 0}) {
     if (parsed != null) return parsed;
   }
   return fallback;
+}
+
+num _carryOverDays(Object? value) {
+  final days = value is num ? value : num.tryParse('$value');
+  return days != null && days.isFinite && days >= 0 ? days : 0;
+}
+
+DateTime? _carryOverExpiry(Object? value) {
+  if (value is! String ||
+      value.length < 10 ||
+      DateTime.tryParse(value) == null) {
+    return null;
+  }
+  final date = DateTime.tryParse(value.substring(0, 10));
+  return date != null &&
+          date.toIso8601String().startsWith(value.substring(0, 10))
+      ? date
+      : null;
 }
 
 DateTime? _date(Map<dynamic, dynamic> map, List<String> keys) {

@@ -10,6 +10,8 @@ class PayslipSummary {
     this.periodStart,
     this.periodEnd,
     this.payDate,
+    this.runName,
+    this.runNumber,
   });
 
   final String id;
@@ -20,6 +22,8 @@ class PayslipSummary {
   final DateTime? periodStart;
   final DateTime? periodEnd;
   final DateTime? payDate;
+  final String? runName;
+  final String? runNumber;
 }
 
 class PayslipPinStatus {

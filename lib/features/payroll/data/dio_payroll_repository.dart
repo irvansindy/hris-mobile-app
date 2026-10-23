@@ -240,6 +240,8 @@ PayslipSummary _summary(Map<String, dynamic> json) {
     status: _requiredString(json, 'status'),
     createdAt: _requiredDate(json, 'createdAt'),
     locked: true,
+    runName: _optionalString(payrollRun?['name']),
+    runNumber: _optionalString(payrollRun?['runNumber']),
     periodName: _optionalString(period?['name']),
     periodStart: _optionalDate(period?['startDate']),
     periodEnd: _optionalDate(period?['endDate']),

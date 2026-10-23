@@ -69,6 +69,31 @@ void main() {
     expect(settings['script'], isNot(contains('hris-mobile-smoke.json')));
   });
 
+  test('Android upload requires the post-build PDFium integrity gate', () {
+    final jobs = (loadYaml(workflow) as YamlMap)['jobs'] as YamlMap;
+    final steps = ((jobs['android'] as YamlMap)['steps'] as YamlList)
+        .cast<YamlMap>()
+        .toList();
+    final guard = steps.indexWhere(
+      (step) => step['name'] == 'Verify native PDFium integrity',
+    );
+    final build = steps.indexWhere(
+      (step) => step['name'] == 'Build release App Bundle',
+    );
+    final upload = steps.indexWhere(
+      (step) => step['name'] == 'Upload Android artifact',
+    );
+    expect(guard, greaterThan(build));
+    expect(upload, greaterThan(guard));
+    expect(
+      steps[guard]['run'],
+      'dart --packages=.dart_tool/package_config.json tool/verify_native_pdfium.dart',
+    );
+    expect(steps[guard]['continue-on-error'], isNot(true));
+    expect(steps[guard]['if'], isNull);
+    expect(steps[upload]['if'], isNull);
+  });
+
   test(
     'iOS build validates production on macOS without distribution signing',
     () {

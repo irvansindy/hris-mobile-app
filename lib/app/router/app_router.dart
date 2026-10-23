@@ -79,6 +79,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) => MainShell(
           navigationShell: navigationShell,
+          isBranchRoot: state.uri.path != '/requests',
           themeMode: ref.read(themeControllerProvider),
           onThemeToggle: () =>
               ref.read(themeControllerProvider.notifier).toggle(),
@@ -120,6 +121,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     onOpenNotifications: () => context.push('/notifications'),
                   ),
                 ),
+              ),
+              GoRoute(
+                path: '/requests',
+                builder: (_, _) => const RequestsScreen(),
               ),
             ],
           ),
@@ -168,7 +173,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      GoRoute(path: '/requests', builder: (_, _) => const RequestsScreen()),
       GoRoute(
         path: '/ess',
         builder: (_, state) {

@@ -2,6 +2,11 @@
 
 Tanggal penyesuaian awal: 12 September 2026. Pembaruan redesign: 15 September 2026.
 
+Pembaruan 18 Oktober 2026: perubahan auth/password gate, identity tenant,
+multi-payslip, saldo carry-over, permission, dan tracing dijelaskan pada
+[Matriks Migrasi Oktober](<Migrasi API Oktober 2026 - Matriks dan Report.md>).
+Bagian September di bawah merupakan riwayat, bukan pengganti addendum terbaru.
+
 ## Sumber kontrak
 
 Implementasi mobile mengikuti `mobile-api.md` berjudul **HRIS Mobile API

@@ -13,12 +13,151 @@ import 'package:hrm_app/core/network/dio_client.dart';
 import 'package:hrm_app/core/network/request_context.dart';
 import 'package:hrm_app/core/security/cookie_session.dart';
 import 'package:hrm_app/core/security/token_storage.dart';
+import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/features/authentication/authentication_dependencies.dart';
 import 'package:hrm_app/features/authentication/authentication_providers.dart';
 import 'package:hrm_app/features/authentication/data/dto/auth_session_dto.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  _localTest(
+    'an in-flight refresh cannot clear a server-required password gate',
+    () async {
+      final fixture = await _Server.start();
+      await fixture.container.read(authControllerProvider.future);
+      fixture.refreshUser = {
+        ...fixture.refreshUser,
+        'mustChangePassword': false,
+      };
+      fixture.refreshRelease = Completer<void>();
+      fixture.nextRefreshStarted = Completer<void>();
+      final pending = fixture.container
+          .read(authRefreshProvider)
+          .refresh(
+            fixture.container.read(sessionLifecycleProvider).revision,
+            RequestOptions(
+              path: '/one',
+              baseUrl: fixture.dio.options.baseUrl,
+              headers: {'Authorization': 'Bearer new-access'},
+            ),
+          );
+      await fixture.nextRefreshStarted!.future;
+      await expectLater(
+        fixture.dio.get<dynamic>('/password-required'),
+        throwsA(isA<DioException>()),
+      );
+      fixture.refreshRelease!.complete();
+      expect(await pending, isNull);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        (await fixture.storage.readSession())?['mustChangePassword'],
+        isTrue,
+      );
+      expect(
+        fixture.container
+            .read(authControllerProvider)
+            .requireValue
+            ?.mustChangePassword,
+        isTrue,
+      );
+    },
+  );
+
+  for (final failingRead in [false, true]) {
+    _localTest(
+      'password gate survives session storage failure, read=$failingRead',
+      () async {
+        final secureStorage = _FailingSessionStorage();
+        final fixture = await _Server.start(secureStorage: secureStorage);
+        await fixture.container.read(authControllerProvider.future);
+        secureStorage.failRead = failingRead;
+        secureStorage.failWrite = !failingRead;
+        await expectLater(
+          fixture.dio.get<dynamic>('/password-required'),
+          throwsA(isA<DioException>()),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          fixture.container
+              .read(authControllerProvider)
+              .requireValue
+              ?.mustChangePassword,
+          isTrue,
+        );
+        expect(await fixture.storage.readAccessToken(), 'new-access');
+        expect(fixture.container.read(sessionInvalidationProvider), 0);
+      },
+    );
+  }
+  _localTest(
+    'password-required 403 gates the active session without refresh or logout',
+    () async {
+      final fixture = await _Server.start();
+      await fixture.container.read(authControllerProvider.future);
+      final refreshCalls = fixture.refreshCalls;
+
+      await expectLater(
+        fixture.dio.get<dynamic>('/password-required'),
+        throwsA(isA<DioException>()),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        fixture.container
+            .read(authControllerProvider)
+            .requireValue
+            ?.mustChangePassword,
+        isTrue,
+      );
+      expect(
+        (await fixture.storage.readSession())?['mustChangePassword'],
+        isTrue,
+      );
+      expect(await fixture.storage.readAccessToken(), 'new-access');
+      expect(fixture.refreshCalls, refreshCalls);
+      expect(fixture.container.read(sessionInvalidationProvider), 0);
+      expect(fixture.calls('/password-required'), 1);
+    },
+  );
+
+  _localTest('ordinary 403 does not force a password change', () async {
+    final fixture = await _Server.start();
+    await fixture.container.read(authControllerProvider.future);
+    await expectLater(
+      fixture.dio.get<dynamic>('/ordinary-forbidden'),
+      throwsA(isA<DioException>()),
+    );
+    expect(
+      fixture.container
+          .read(authControllerProvider)
+          .requireValue
+          ?.mustChangePassword,
+      isFalse,
+    );
+    expect(await fixture.storage.readAccessToken(), 'new-access');
+  });
+
+  _localTest(
+    'late password-required response cannot restore a logged-out session',
+    () async {
+      final fixture = await _Server.start();
+      await fixture.container.read(authControllerProvider.future);
+      fixture.lateRelease = Completer<void>();
+      final pending = fixture.dio
+          .get<dynamic>('/late-password-required')
+          .then<Object?>((r) => r, onError: (Object e) => e);
+      await fixture.lateStarted.future;
+      await fixture.container.read(authControllerProvider.notifier).logout();
+      fixture.lateRelease!.complete();
+      expect(await pending, isA<DioException>());
+      expect(await fixture.storage.readSession(), isNull);
+      expect(
+        fixture.container.read(authControllerProvider).valueOrNull,
+        isNull,
+      );
+      expect(fixture.container.read(refreshedSessionProvider), isNull);
+    },
+  );
   for (final cookieAuth in [false]) {
     _localTest(
       'restore retains rotated credentials, cookie=$cookieAuth',
@@ -221,6 +360,18 @@ void main() {
       expect(refresh.correlationId, isNot(protected.first.correlationId));
       expect(refresh.clientType, 'mobile');
       expect(protected.first.clientType, isNull);
+      final ids = fixture.requests.map((r) => r.requestId).toList();
+      expect(
+        ids,
+        everyElement(
+          matches(
+            RegExp(
+              r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+            ),
+          ),
+        ),
+      );
+      expect(ids.toSet(), hasLength(ids.length));
     },
   );
 
@@ -618,6 +769,60 @@ class _GatedSecureStorage extends FlutterSecureStorage {
   }
 }
 
+class _FailingSessionStorage extends FlutterSecureStorage {
+  bool failRead = false;
+  bool failWrite = false;
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    if (key == 'hrms.session' && failRead) {
+      throw StateError('Session read failed');
+    }
+    return super.read(
+      key: key,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    if (key == 'hrms.session' && failWrite) {
+      throw StateError('Session write failed');
+    }
+    return super.write(
+      key: key,
+      value: value,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+}
+
 class _Server {
   _Server(this.server, this.container, this.cookieAuth, this.storage);
   final HttpServer server;
@@ -634,6 +839,7 @@ class _Server {
           String? cookie,
           String? csrf,
           String? correlationId,
+          String? requestId,
           String? clientType,
           String query,
           String? key,
@@ -643,6 +849,7 @@ class _Server {
   int refreshStatus = 200;
   int retryStatus = 200;
   Completer<void>? refreshRelease;
+  Completer<void>? nextRefreshStarted;
   Completer<void>? lateRelease;
   final lateStarted = Completer<void>();
   final refreshStarted = Completer<void>();
@@ -747,13 +954,32 @@ class _Server {
       cookie: cookie,
       csrf: request.headers.value('x-csrf-token'),
       correlationId: request.headers.value('x-correlation-id'),
+      requestId: request.headers.value('x-request-id'),
       clientType: request.headers.value('x-client-type'),
       query: request.uri.query,
       key: request.headers.value('idempotency-key'),
     ));
     request.response.headers.contentType = ContentType.json;
-    if (path == '/auth/refresh') {
+    if (path.endsWith('password-required') || path == '/ordinary-forbidden') {
+      if (path == '/late-password-required') {
+        lateStarted.complete();
+        await lateRelease!.future;
+      }
+      request.response.statusCode = 403;
+      request.response.write(
+        jsonEncode({
+          'success': false,
+          'code': path == '/ordinary-forbidden'
+              ? 'FORBIDDEN'
+              : 'PASSWORD_CHANGE_REQUIRED',
+          'message': 'Password change required',
+        }),
+      );
+    } else if (path == '/auth/refresh') {
       refreshCalls++;
+      if (nextRefreshStarted case final started? when !started.isCompleted) {
+        started.complete();
+      }
       if (!refreshStarted.isCompleted) refreshStarted.complete();
       await refreshRelease?.future;
       request.response.statusCode = refreshStatus;

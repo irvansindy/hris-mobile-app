@@ -42,7 +42,8 @@ void main() {
       ).fetch(_context, EmptyProfileLocalDataSource().readCurrentEmployee());
       expect(adapter.request!.path, '/employees/e1');
       expect(adapter.request!.queryParameters, isEmpty);
-      expect(employee.id, 'EMP001');
+      expect(employee.id, 'e1');
+      expect(employee.employeeNumber, 'EMP001');
       expect(employee.department, 'Operasional');
       expect(employee.role, 'Staff');
       expect(employee.location, 'Kantor Pusat');
@@ -96,7 +97,7 @@ void main() {
       EmptyProfileLocalDataSource().readCurrentEmployee(),
     );
 
-    expect(employee.id, 'EMP001');
+    expect(employee.id, 'e1');
   });
   test(
     'masked contact values never become editable-looking profile values',

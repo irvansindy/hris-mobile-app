@@ -14,6 +14,7 @@ class AuthRefreshCoordinator {
     required this.config,
     required this.cookieStore,
     this.onSessionUpdated,
+    this.onPasswordChangeRequired,
   });
 
   final TokenStorage storage;
@@ -21,6 +22,8 @@ class AuthRefreshCoordinator {
   final AppConfig config;
   final SessionCookieStore cookieStore;
   final void Function(Map<String, dynamic> session)? onSessionUpdated;
+  final void Function()? onPasswordChangeRequired;
+  int? _passwordChangeRevision;
   Future<DioException?>? _refreshing;
   int? _revision;
   int _credentialRevision = 0;
@@ -29,6 +32,27 @@ class AuthRefreshCoordinator {
 
   Future<Map<String, String>> readHeaders(Uri uri, {required String method}) =>
       cookieStore.headersFor(uri, method: method);
+
+  Future<void> requirePasswordChange(
+    int revision,
+    bool Function() isCurrent,
+  ) async {
+    if (!lifecycle.isCurrent(revision) || !isCurrent()) return;
+    _passwordChangeRevision = revision;
+    onPasswordChangeRequired?.call();
+    try {
+      await lifecycle.protect(revision, () async {
+        if (!isCurrent()) return;
+        final stored = await storage.readSession();
+        if (stored == null || !isCurrent()) return;
+        final updated = {...stored, 'mustChangePassword': true};
+        await storage.saveSession(updated);
+        if (isCurrent()) onSessionUpdated?.call(Map.unmodifiable(updated));
+      });
+    } on Object {
+      // Keep the in-memory gate even when platform storage is unavailable.
+    }
+  }
 
   Future<DioException?> refresh(int revision, RequestOptions failedRequest) {
     final active = _refreshing;
@@ -132,6 +156,7 @@ class AuthRefreshCoordinator {
           headers: {
             if (!usesBrowserCookieStore) 'X-Client-Type': 'mobile',
             'X-Correlation-Id': const Uuid().v4(),
+            'X-Request-Id': const Uuid().v4(),
             if (usesBrowserCookieStore) 'Cookie': ?cookie,
             if (usesBrowserCookieStore)
               'X-CSRF-Token': ?snapshot.refreshHeaders['X-CSRF-Token'],
@@ -206,6 +231,9 @@ class AuthRefreshCoordinator {
           updatedSession = {
             ...session,
             ...?refreshedUser,
+            if (_passwordChangeRevision == revision ||
+                session['mustChangePassword'] == true)
+              'mustChangePassword': true,
             'accessToken': ?access,
             'refreshToken': ?refresh,
             if (cookieAuth) 'usesCookieAuth': true,

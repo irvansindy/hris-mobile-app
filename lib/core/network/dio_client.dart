@@ -18,6 +18,9 @@ final sessionInvalidationProvider = StateProvider<int>((ref) => 0);
 final refreshedSessionProvider = StateProvider<Map<String, dynamic>?>(
   (ref) => null,
 );
+final passwordChangeRequiredRevisionProvider = StateProvider<int?>(
+  (ref) => null,
+);
 
 final sessionCookieStoreProvider = Provider<SessionCookieStore>(
   (ref) => SessionCookieStore(
@@ -32,10 +35,17 @@ final authRefreshProvider = Provider<AuthRefreshCoordinator>(
     lifecycle: ref.read(sessionLifecycleProvider),
     config: ref.watch(appConfigProvider),
     cookieStore: ref.watch(sessionCookieStoreProvider),
+    onPasswordChangeRequired: () {
+      ref.read(passwordChangeRequiredRevisionProvider.notifier).state = ref
+          .read(sessionLifecycleProvider)
+          .revision;
+    },
     onSessionUpdated: (session) {
       ref.read(refreshedSessionProvider.notifier).state = session;
-      ref.read(requestContextProvider.notifier).state =
-          RequestContext.fromSessionJson(session);
+      if (ref.read(requestContextProvider) != null) {
+        ref.read(requestContextProvider.notifier).state =
+            RequestContext.fromSessionJson(session);
+      }
     },
   ),
 );
@@ -157,6 +167,7 @@ class AuthInterceptor extends Interceptor {
       () => session?.revision ?? _lifecycle.revision,
     );
     options.headers.putIfAbsent('X-Correlation-Id', () => const Uuid().v4());
+    options.headers['X-Request-Id'] = const Uuid().v4();
     if (options.extra['logoutSnapshot'] == true) {
       handler.next(options);
       return;
@@ -248,6 +259,19 @@ class AuthInterceptor extends Interceptor {
     }
     if (!_current(request)) {
       handler.next(_cancelled(request));
+      return;
+    }
+    if (err.response?.statusCode == 403 &&
+        err.response?.data is Map &&
+        (err.response!.data as Map)['code'] == 'PASSWORD_CHANGE_REQUIRED') {
+      try {
+        await _refresh.requirePasswordChange(
+          request.extra['sessionRevision'] as int,
+          () => _current(request),
+        );
+      } finally {
+        handler.next(err);
+      }
       return;
     }
     if (!_refreshableAuthenticationError(err)) {

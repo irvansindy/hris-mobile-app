@@ -666,6 +666,7 @@ class DioEssRepository implements EssRepository {
       returnedAt: _optionalDate(json['returnedAt']),
       condition:
           _text(json, 'conditionAtReturn') ??
+          _text(json, 'conditionAtAssign') ??
           _text(json, 'conditionAtAssignment'),
     );
   }

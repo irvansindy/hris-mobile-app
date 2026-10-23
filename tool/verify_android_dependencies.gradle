@@ -1,0 +1,28 @@
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.result.UnresolvedDependencyResult
+
+// Run from android/: ./gradlew :app:verifyDependencySafety -I ../tool/verify_android_dependencies.gradle
+gradle.projectsEvaluated {
+    def app = gradle.rootProject.findProject(':app')
+    if (app == null) return
+    app.tasks.register('verifyDependencySafety') {
+        doLast {
+            ['debugRuntimeClasspath', 'profileRuntimeClasspath', 'releaseRuntimeClasspath'].each { name ->
+                def graph = app.configurations.getByName(name).incoming.resolutionResult
+                def unresolved = graph.allDependencies.findAll { it instanceof UnresolvedDependencyResult }
+                if (!unresolved.empty) throw new GradleException("${name}: unresolved dependencies")
+                def modules = graph.allComponents.collect { it.id }
+                    .findAll { it instanceof ModuleComponentIdentifier }
+                if (modules.empty) throw new GradleException("${name}: empty dependency graph")
+                def junit = modules.findAll { it.group == 'junit' && it.module == 'junit' }
+                if (name == 'releaseRuntimeClasspath' && !junit.empty) {
+                    throw new GradleException('JUnit must not be packaged in the release runtime')
+                }
+                if (junit.any { it.version != '4.13.2' }) {
+                    throw new GradleException("${name}: expected patched JUnit 4.13.2, found ${junit*.version}")
+                }
+                logger.lifecycle("${name}: ${modules.size()} modules, JUnit ${junit*.version}, safe")
+            }
+        }
+    }
+}

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hrm_app/core/config/app_config.dart';
+import 'package:hrm_app/core/network/dio_client.dart';
 import 'package:hrm_app/core/security/session_lifecycle.dart';
 import 'package:hrm_app/features/notifications/push/push_adapter.dart';
 import 'package:hrm_app/features/notifications/push/push_coordinator.dart';
@@ -31,6 +33,10 @@ class _PushStatusPanelState extends ConsumerState<PushStatusPanel> {
     setState(() => _busy = true);
     try {
       await action();
+    } on Object {
+      if (mounted && session.isCurrent) {
+        ref.read(pushStatusProvider.notifier).state = PushStatus.failed;
+      }
     } finally {
       if (mounted && session.isCurrent) setState(() => _busy = false);
     }
@@ -54,6 +60,69 @@ class _PushStatusPanelState extends ConsumerState<PushStatusPanel> {
     _session = session;
     final status = ref.watch(pushStatusProvider);
     final adapter = ref.read(pushAdapterProvider);
+    if (mode == PushMode.firebase) {
+      final ready = session.isCurrent && session.context?.employeeId != null;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Firebase development Android'),
+            const SizedBox(height: 8),
+            Semantics(
+              liveRegion: true,
+              child: Text(switch (status) {
+                PushStatus.disabled => 'Menunggu sesi akun',
+                PushStatus.denied => 'Izin notifikasi ditolak',
+                PushStatus.registering => 'Menyiapkan FCM development',
+                PushStatus.consoleReady =>
+                  'FCM siap untuk tes Console; belum terdaftar di backend',
+                PushStatus.simulated =>
+                  'Mode tidak sesuai konfigurasi Firebase',
+                PushStatus.failed =>
+                  'FCM belum siap. Periksa konfigurasi, jaringan, dan izin, lalu coba lagi.',
+              }),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(44, 44)),
+              onPressed: !ready || _busy
+                  ? null
+                  : () => _run(ref.read(pushCoordinatorProvider).retry),
+              child: const Text('Coba aktivasi lagi'),
+            ),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(44, 44)),
+              onPressed: !ready || _busy || status != PushStatus.consoleReady
+                  ? null
+                  : () => _run(() async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final token = await adapter.getToken().timeout(
+                        ref.read(appConfigProvider).receiveTimeout,
+                      );
+                      if (token == null) {
+                        throw StateError('Token belum tersedia.');
+                      }
+                      if (!mounted || !session.isCurrent) return;
+                      await Clipboard.setData(ClipboardData(text: token));
+                      if (!mounted || !session.isCurrent) return;
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Token disalin. Gunakan hanya untuk tes Firebase Console.',
+                          ),
+                        ),
+                      );
+                    }),
+              child: const Text('Salin token untuk tes Console'),
+            ),
+            const Text(
+              'Token tidak dikirim ke backend. Jangan membagikan token di chat atau laporan. Pesan foreground memperbarui inbox, bukan banner sistem.',
+            ),
+          ],
+        ),
+      );
+    }
     final registry = ref.read(deviceRegistrationRepositoryProvider);
     if (adapter is! DummyPushAdapter ||
         registry is! DummyDeviceRegistrationRepository) {
@@ -91,6 +160,8 @@ class _PushStatusPanelState extends ConsumerState<PushStatusPanel> {
               PushStatus.registering => 'Mendaftarkan perangkat simulasi',
               PushStatus.simulated =>
                 'Terdaftar lokal; bukan delivery Firebase',
+              PushStatus.consoleReady =>
+                'FCM siap untuk tes Console; belum terdaftar di backend',
               PushStatus.failed =>
                 'Registrasi simulasi gagal. Coba aktivasi lagi.',
             }),

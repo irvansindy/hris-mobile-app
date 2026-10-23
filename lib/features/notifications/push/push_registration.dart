@@ -28,6 +28,18 @@ abstract interface class DeviceRegistrationRepository {
   });
 }
 
+// Console testing obtains real FCM tokens without registering them with the HRIS API.
+class ConsoleDeviceRegistrationRepository
+    implements DeviceRegistrationRepository {
+  @override
+  Future<void> register(DeviceRegistration registration) async {}
+  @override
+  Future<void> unregister(
+    String installationId, {
+    required String idempotencyKey,
+  }) async {}
+}
+
 class DioDeviceRegistrationRepository implements DeviceRegistrationRepository {
   const DioDeviceRegistrationRepository(this._dio);
   final Dio _dio;

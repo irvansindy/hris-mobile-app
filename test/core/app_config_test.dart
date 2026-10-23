@@ -3,6 +3,27 @@ import 'package:hrm_app/core/config/app_config.dart';
 
 void main() {
   group('AppConfig', () {
+    test('Firebase push is available only for development debug', () {
+      final config = AppConfig.fromEnvironment(
+        productionBuild: false,
+        values: const {'PUSH_MODE': 'firebase'},
+      );
+      expect(config.pushMode.name, 'firebase');
+      for (final productionBuild in [false, true]) {
+        expect(
+          () => AppConfig.fromEnvironment(
+            productionBuild: productionBuild,
+            values: const {
+              'APP_ENV': 'production',
+              'BASE_URL': 'https://api.example.test/api/v1',
+              'PUSH_MODE': 'firebase',
+            },
+          ),
+          throwsA(isA<AppConfigException>()),
+        );
+      }
+    });
+
     test('development keeps an explicit, development-only HTTP fallback', () {
       final config = AppConfig.fromEnvironment(productionBuild: false);
 
@@ -57,7 +78,7 @@ void main() {
       expect(
         () => AppConfig.fromEnvironment(
           productionBuild: false,
-          values: const {'PUSH_MODE': 'firebase'},
+          values: const {'PUSH_MODE': 'unknown'},
         ),
         throwsA(isA<AppConfigException>()),
       );

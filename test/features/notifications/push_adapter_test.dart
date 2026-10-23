@@ -22,6 +22,37 @@ const registration = DeviceRegistration(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('Firebase development registry never reads Dio, even on HTTP', () async {
+    final container = ProviderContainer(
+      overrides: [
+        appConfigProvider.overrideWithValue(
+          AppConfig.fromEnvironment(
+            productionBuild: false,
+            values: const {'PUSH_MODE': 'firebase'},
+          ),
+        ),
+        dioProvider.overrideWith((_) => throw StateError('No token over HTTP')),
+        featureDioProvider.overrideWith(
+          (_) => throw StateError('No token over HTTP'),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final registry = container.read(deviceRegistrationRepositoryProvider);
+    await registry.register(
+      const DeviceRegistration(
+        installationId: '0123456789abcdef0123456789abcdef',
+        platform: 'ANDROID',
+        token: 'real-fcm-token-kept-off-http',
+        idempotencyKey: 'test-console-only-key',
+      ),
+    );
+    await registry.unregister(
+      '0123456789abcdef0123456789abcdef',
+      idempotencyKey: 'test-console-only-key',
+    );
+  });
+
   test(
     'disabled has no token or events and cannot request OS permission',
     () async {

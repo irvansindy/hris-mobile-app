@@ -32,6 +32,7 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/test/failures/
 
 # Symbolication related
 app.*.symbols
@@ -48,4 +49,5 @@ app.*.map.json
 .env
 tmp/hris-mobile-smoke.json
 android/app/google-services.json
+android/app/src/debug/google-services.json
 ios/Runner/GoogleService-Info.plist

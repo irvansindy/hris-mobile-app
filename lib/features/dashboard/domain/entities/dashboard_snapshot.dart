@@ -154,6 +154,8 @@ class LeaveBalance {
     required this.colorIndex,
     this.shortLabel,
     this.note,
+    this.carryOverDays = 0,
+    this.carryOverExpiredAt,
   });
 
   final String type;
@@ -162,6 +164,8 @@ class LeaveBalance {
   final int colorIndex;
   final String? shortLabel;
   final String? note;
+  final num carryOverDays;
+  final DateTime? carryOverExpiredAt;
 }
 
 class Announcement {

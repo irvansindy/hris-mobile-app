@@ -33,6 +33,29 @@ void main() {
   });
 
   test(
+    'real Firebase Console mode never reports backend registration success',
+    () async {
+      final coordinator = PushCoordinator(
+        mode: PushMode.firebase,
+        adapter: rig.adapter,
+        identity: InstallationIdentity(
+          await SharedPreferences.getInstance(),
+          'console',
+        ),
+        platform: 'ANDROID',
+        timeout: const Duration(seconds: 1),
+        registryForSession: (_) => ConsoleDeviceRegistrationRepository(),
+      );
+      addTearDown(coordinator.dispose);
+      await coordinator.bind(rig.session('A'));
+      expect(coordinator.status.name, 'consoleReady');
+      expect(rig.a.commands, isEmpty);
+      await coordinator.unbind();
+      expect(coordinator.status, PushStatus.disabled);
+    },
+  );
+
+  test(
     'bind and same identity refresh register once; retry preserves failed command',
     () async {
       rig.a.failRegister = true;
