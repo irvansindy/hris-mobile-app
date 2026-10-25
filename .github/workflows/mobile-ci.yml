@@ -169,3 +169,43 @@ jobs:
           path: build/ios/iphoneos/Runner.app
           if-no-files-found: error
           retention-days: 14
+
+      - name: Run iOS simulator tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios-qa
+          xcodebuild -version | tee build/ios-qa/xcode-version.txt
+          uname -m | tee build/ios-qa/architecture.txt
+          xcrun simctl list devices available --json > build/ios-qa/simulators.json
+          selection=$(dart --packages=.dart_tool/package_config.json tool/select_ios_simulator.dart < build/ios-qa/simulators.json)
+          read -r simulator_id simulator_state <<< "$selection"
+          echo "$selection" | tee build/ios-qa/selected-simulator.txt
+          if [ "$simulator_state" = "Shutdown" ]; then
+            xcrun simctl boot "$simulator_id"
+          fi
+          xcrun simctl bootstatus "$simulator_id" | tee build/ios-qa/boot.log
+          flutter build ios --simulator --debug --no-pub \
+            --dart-define=APP_ENV=production \
+            --dart-define=BASE_URL=https://ci.invalid/api/v1 \
+            --dart-define=ENABLE_LOGGING=false \
+            --dart-define=PUSH_MODE=disabled 2>&1 | tee build/ios-qa/build.log
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
+            -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" \
+            -parallel-testing-enabled NO -only-testing:RunnerTests \
+            -resultBundlePath "$PWD/build/ios-qa/native.xcresult" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/ios-qa/native-tests.log
+          flutter test integration_test/redesign_flow_test.dart -d "$simulator_id" \
+            --dart-define=APP_ENV=production \
+            --dart-define=BASE_URL=https://ci.invalid/api/v1 \
+            --dart-define=ENABLE_LOGGING=false \
+            --dart-define=PUSH_MODE=disabled 2>&1 | tee build/ios-qa/integration.log
+
+      - name: Upload iOS simulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulator-diagnostics
+          path: build/ios-qa
+          if-no-files-found: warn
+          retention-days: 14

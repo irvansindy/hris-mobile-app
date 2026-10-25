@@ -114,4 +114,56 @@ void main() {
       expect(workflow, contains('path: build/ios/iphoneos/Runner.app'));
     },
   );
+
+  test(
+    'iOS simulator execution is a mandatory gate after the unsigned build',
+    () {
+      final jobs = (loadYaml(workflow) as YamlMap)['jobs'] as YamlMap;
+      final steps = ((jobs['ios'] as YamlMap)['steps'] as YamlList)
+          .cast<YamlMap>()
+          .toList();
+      final simulator = steps.where(
+        (step) => step['name'] == 'Run iOS simulator tests',
+      );
+      expect(simulator, hasLength(1));
+      final step = simulator.single;
+      expect(step['if'], isNull);
+      expect(step['continue-on-error'], isNot(true));
+      expect(
+        steps.indexOf(step),
+        greaterThan(
+          steps.indexWhere(
+            (step) => step['name'] == 'Build iOS without signing',
+          ),
+        ),
+      );
+      final command = step['run'] as String;
+      expect(command, contains('set -euo pipefail'));
+      expect(command, contains('tool/select_ios_simulator.dart'));
+      expect(command, contains('-only-testing:RunnerTests'));
+      expect(command, contains('integration_test/redesign_flow_test.dart'));
+      expect(command, contains('--dart-define=PUSH_MODE=disabled'));
+      expect(command, isNot(contains('--dart-define-from-file')));
+    },
+  );
+
+  test('iOS simulator diagnostics are uploaded even after test failure', () {
+    final jobs = (loadYaml(workflow) as YamlMap)['jobs'] as YamlMap;
+    final steps = ((jobs['ios'] as YamlMap)['steps'] as YamlList)
+        .cast<YamlMap>()
+        .toList();
+    final uploads = steps.where(
+      (step) => step['name'] == 'Upload iOS simulator diagnostics',
+    );
+    expect(uploads, hasLength(1));
+    final upload = uploads.single;
+    expect(upload['if'], 'always()');
+    expect((upload['with'] as YamlMap)['path'], 'build/ios-qa');
+    expect(
+      steps.indexOf(upload),
+      greaterThan(
+        steps.indexWhere((step) => step['name'] == 'Run iOS simulator tests'),
+      ),
+    );
+  });
 }
